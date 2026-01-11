@@ -41,5 +41,6 @@ EOF'
 chmod +x /home/proxyuser/autoprint.sh
 chown proxyuser:proxyuser /home/proxyuser/autoprint.sh
 
-echo '* 21-23 * * * proxyuser bash -c '\''[ ! -f "/tmp/autoprint_$(date +\%Y.\%m.\%d)" ] && [ -f /home/proxyuser/autoprint.sh ] && /home/proxyuser/autoprint.sh'\'' | sudo tee /etc/cron.d/print-job
+echo '* 21-23 * * * proxyuser bash -c '\''[ ! -f "/tmp/autoprint_$(date +\%Y.\%m.\%d)" ] \
+&& [ -f /home/proxyuser/autoprint.sh ] && /home/proxyuser/autoprint.sh'\'' | sudo tee /etc/cron.d/print-job
 sudo systemctl restart cron
