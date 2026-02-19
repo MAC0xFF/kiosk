@@ -2,7 +2,7 @@
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
+CYAN='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Global vars
@@ -22,7 +22,7 @@ get_token() {
         --data "{ \"apiLogin\": \"$API_KEY\" }" | jq -r '.token')    
     if [[ $TOKEN != null && $TOKEN != "" ]]; then
         echo -e "${GREEN}Token successfully received!${NC}"
-        echo -e "Token: ${BLUE}$TOKEN${NC}"
+        echo -e "Token: ${CYAN}$TOKEN${NC}"
     else
         echo -e "${RED}Error obtaining token!${NC}"
         TOKEN=""
@@ -54,7 +54,7 @@ get_terminal_groups() {
     if [[ -z $ORG_ID ]]; then
         read -p "Enter organization ID: " ORG_ID
     else
-        echo -e "Current Organization ID: ${BLUE}$ORG_ID${NC}"
+        echo -e "Current Organization ID: ${CYAN}$ORG_ID${NC}"
         read -p "Press Enter to use the current one, or enter a new ID: " new_org_id
         if [[ ! -z $new_org_id ]]; then
             ORG_ID=$new_org_id
@@ -81,7 +81,7 @@ get_payment_types() {
     if [[ -z $ORG_ID ]]; then
         read -p "Enter organization ID: " ORG_ID
     else
-        echo -e "Current Organization ID: ${BLUE}$ORG_ID${NC}"
+        echo -e "Current Organization ID: ${CYAN}$ORG_ID${NC}"
         read -p "Press Enter to use the current one, or enter a new ID: " new_org_id
         if [[ ! -z $new_org_id ]]; then
             ORG_ID=$new_org_id
@@ -107,13 +107,13 @@ get_customer_info() {
     if [[ -z $ORG_ID ]]; then
         read -p "Enter organization ID: " ORG_ID
     else
-        echo -e "Current Organization ID: ${BLUE}$ORG_ID${NC}"
+        echo -e "Current Organization ID: ${CYAN}$ORG_ID${NC}"
         read -p "Press Enter to use the current one, or enter a new ID: " new_org_id
         if [[ ! -z $new_org_id ]]; then
             ORG_ID=$new_org_id
         fi
     fi
-    read -p "Enter your phone number: " number
+    read -p "Enter your phone number (format +79103972345): " number
     curl -sX POST \
         --url https://api-ru.iiko.services/api/1/loyalty/iiko/customer/info \
         --header "Authorization: Bearer $TOKEN" \
@@ -136,17 +136,17 @@ show_status() {
         echo -e "Token: ${GREEN}received${NC}"
     fi
     if [[ ! -z $API_KEY ]]; then
-        echo -e "API Key: ${BLUE}${API_KEY}${NC}"
+        echo -e "API Key: ${CYAN}${API_KEY}${NC}"
     fi
     if [[ -z $ORG_ID ]]; then
         echo -e "Organization ID: ${RED}not set${NC}"
     else
-        echo -e "Organization ID: ${BLUE}$ORG_ID${NC}"
+        echo -e "Organization ID: ${CYAN}$ORG_ID${NC}"
     fi
     if [[ -z $TERMINAL_GROUP ]]; then
         echo -e "Terminal group: ${RED}not set${NC}"
     else
-        echo -e "Terminal group: ${BLUE}$TERMINAL_GROUP${NC}"
+        echo -e "Terminal group: ${CYAN}$TERMINAL_GROUP${NC}"
     fi    
 }
 
