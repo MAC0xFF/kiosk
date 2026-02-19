@@ -274,7 +274,7 @@ show_menu() {
     echo "8) Get menu by external Iiko Web Menu ID (saves to file)"
     echo "9) Reset organization ID"
     echo "10) Show status"
-    echo "0|q|Q) Exit"
+    echo "0) Exit"
     echo ""
     echo -e "${GREEN}========================================${NC}"
     echo ""
