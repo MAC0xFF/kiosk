@@ -11,6 +11,7 @@ TOKEN=""
 API_KEY=""
 ORG_ID=""
 TERMINAL_GROUP=""
+IikoWebMenu_ID=""
 
 # Function for getting a token
 get_token() {
@@ -160,9 +161,9 @@ get_nomenclature() {
     fi
 }
 
-# Function for getting external menu list
+# Function for getting external Iiko Web Menu ID
 get_external_menus() {
-    echo -e "${YELLOW}=== Obtaining external menu list ===${NC}"
+    echo -e "${YELLOW}=== Obtaining external Iiko Web Menu ID ===${NC}"
     
     if [[ -z $TOKEN ]]; then
         echo -e "${RED}Error: Token not received. Please obtain a token first.${NC}"
@@ -259,8 +260,8 @@ show_menu() {
     echo "4) Get payment types"
     echo "5) Get client information"
     echo "6) Get nomenclature (saves to file)"
-    echo "7) Get external menu list"
-    echo "8) Get menu by external ID (saves to file)"
+    echo "7) Get external Iiko Web Menu ID"
+    echo "8) Get menu by external Iiko Web Menu ID (saves to file)"
     echo "9) Reset organization ID"
     echo "10) Show status"
     echo "0|q|Q) Exit"
@@ -280,7 +281,7 @@ main() {
             4) get_payment_types ;;
             5) get_customer_info ;;
             6) get_nomenclature ;;
-            7) get_external_menus ;;
+            7) get_external_menus read -p 'Iiko Web Menu ID: ' IikoWebMenu_ID ;;
             8) get_menu_by_id ;;
             9) reset_org_id ;;
             10) show_status ;;
