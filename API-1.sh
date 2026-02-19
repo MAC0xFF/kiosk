@@ -166,7 +166,7 @@ show_menu() {
     echo "5) Get client information"
     echo "6) Reset organization ID"
     echo "7) Show status"
-    echo "0) Exit"
+    echo "0|q|Q) Exit"
     echo ""
     echo -e "${GREEN}========================================${NC}"
     echo ""
@@ -184,7 +184,7 @@ main() {
             5) get_customer_info ;;
             6) reset_org_id ;;
             7) show_status ;;
-            0|q) echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
+            0|q|Q) echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
             *) echo -e "${RED}Incorrect choice! Please select 0-7${NC}" ;;
         esac
         echo ""
