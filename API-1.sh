@@ -11,7 +11,7 @@ TOKEN=""
 API_KEY=""
 ORG_ID=""
 TERMINAL_GROUP=""
-IikoWebMenu_ID=""
+ExternalIikoWebMenu_ID=""
 
 # Function for getting a token
 get_token() {
@@ -230,19 +230,28 @@ show_status() {
     else
         echo -e "Token: ${GREEN}received${NC}"
     fi
+    
     if [[ ! -z $API_KEY ]]; then
         echo -e "API Key: ${BLUE}${API_KEY}${NC}"
     fi
+    
     if [[ -z $ORG_ID ]]; then
         echo -e "Organization ID: ${RED}not set${NC}"
     else
         echo -e "Organization ID: ${BLUE}$ORG_ID${NC}"
     fi
+    
     if [[ -z $TERMINAL_GROUP ]]; then
         echo -e "Terminal group: ${RED}not set${NC}"
     else
         echo -e "Terminal group: ${BLUE}$TERMINAL_GROUP${NC}"
-    fi    
+    fi  
+
+    if [[ -z $ExternalIikoWebMenu_ID ]]; then
+        echo -e "External Iiko Web Menu ID: ${RED}not set${NC}"
+    else
+        echo -e "External Iiko Web Menu ID: ${BLUE}$ExternalIikoWebMenu_ID${NC}"
+    fi     
 }
 
 show_menu() {
@@ -281,7 +290,7 @@ main() {
             4) get_payment_types ;;
             5) get_customer_info ;;
             6) get_nomenclature ;;
-            7) get_external_menus read -p 'Iiko Web Menu ID: ' IikoWebMenu_ID ;;
+            7) get_external_menus read -p 'Iiko Web Menu ID: ' ExternalIikoWebMenu_ID ;;
             8) get_menu_by_id ;;
             9) reset_org_id ;;
             10) show_status ;;
