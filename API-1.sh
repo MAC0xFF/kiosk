@@ -122,6 +122,99 @@ get_customer_info() {
         --data "{\"phone\": \"$number\", \"type\": \"phone\", \"organizationId\": \"$ORG_ID\"}" | jq
 }
 
+# Function for getting nomenclature
+get_nomenclature() {
+    echo -e "${YELLOW}=== Obtaining nomenclature ===${NC}"
+    
+    if [[ -z $TOKEN ]]; then
+        echo -e "${RED}Error: Token not received. Please obtain a token first.${NC}"
+        return 1
+    fi
+    
+    local current_org="$ORG_ID"
+    if [[ -z $current_org ]]; then
+        read -p "Enter organization ID: " current_org
+    else
+        echo -e "Current Organization ID: ${BLUE}$current_org${NC}"
+        read -p "Press Enter to use the current one, or enter a new ID: " new_org_id
+        if [[ ! -z $new_org_id ]]; then
+            current_org=$new_org_id
+        fi
+    fi
+    
+    echo -e "${YELLOW}Retrieving nomenclature...${NC}"
+    curl -sX POST \
+        --url https://api-ru.iiko.services/api/1/nomenclature \
+        --header "Authorization: Bearer $TOKEN" \
+        --header 'Content-Type: application/json' \
+        --data "{\"organizationId\":  \"$current_org\" }" | jq > ~/nomenclature.txt
+    
+    if [[ $? -eq 0 ]]; then
+        echo -e "${GREEN}Nomenclature saved to ~/nomenclature.txt${NC}"
+        read -p "Do you want to view the file with less? (y/n): " view_choice
+        if [[ $view_choice == "y" || $view_choice == "Y" ]]; then
+            less ~/nomenclature.txt
+        fi
+    else
+        echo -e "${RED}Error retrieving nomenclature${NC}"
+    fi
+}
+
+# Function for getting external menu list
+get_external_menus() {
+    echo -e "${YELLOW}=== Obtaining external menu list ===${NC}"
+    
+    if [[ -z $TOKEN ]]; then
+        echo -e "${RED}Error: Token not received. Please obtain a token first.${NC}"
+        return 1
+    fi
+    
+    curl -sX POST \
+        --url 'https://api-ru.iiko.services/api/2/menu' \
+        --header "Authorization: Bearer $TOKEN" \
+        --header 'Content-Type: application/json' | jq
+}
+
+# Function for getting menu by ID
+get_menu_by_id() {
+    echo -e "${YELLOW}=== Obtaining menu by external ID ===${NC}"
+    
+    if [[ -z $TOKEN ]]; then
+        echo -e "${RED}Error: Token not received. Please obtain a token first.${NC}"
+        return 1
+    fi
+    
+    local current_org="$ORG_ID"
+    if [[ -z $current_org ]]; then
+        read -p "Enter organization ID: " current_org
+    else
+        echo -e "Current Organization ID: ${BLUE}$current_org${NC}"
+        read -p "Press Enter to use the current one, or enter a new ID: " new_org_id
+        if [[ ! -z $new_org_id ]]; then
+            current_org=$new_org_id
+        fi
+    fi
+    
+    read -p "Enter external menu ID: " menuID
+    
+    echo -e "${YELLOW}Retrieving menu...${NC}"
+    curl -sX POST \
+        --url 'https://api-ru.iiko.services/api/2/menu/by_id' \
+        --header "Authorization: Bearer $TOKEN" \
+        --header 'Content-Type: application/json'  \
+        --data "{\"organizationIds\": [ \"$current_org\"],  \"externalMenuId\":  \"$menuID\"}" | jq > ~/menu.txt
+    
+    if [[ $? -eq 0 ]]; then
+        echo -e "${GREEN}Menu saved to ~/menu.txt${NC}"
+        read -p "Do you want to view the file with less? (y/n): " view_choice
+        if [[ $view_choice == "y" || $view_choice == "Y" ]]; then
+            less ~/menu.txt
+        fi
+    else
+        echo -e "${RED}Error retrieving menu${NC}"
+    fi
+}
+
 # Function for resetting the organization ID
 reset_org_id() {
     ORG_ID=""
@@ -165,8 +258,11 @@ show_menu() {
     echo "3) Get terminal groups"
     echo "4) Get payment types"
     echo "5) Get client information"
-    echo "6) Reset organization ID"
-    echo "7) Show status"
+    echo "6) Get nomenclature (saves to file)"
+    echo "7) Get external menu list"
+    echo "8) Get menu by external ID (saves to file)"
+    echo "9) Reset organization ID"
+    echo "10) Show status"
     echo "0|q|Q) Exit"
     echo ""
     echo -e "${GREEN}========================================${NC}"
@@ -176,17 +272,20 @@ show_menu() {
 main() {
     while true; do
         show_menu
-        read -p "Select an operation (0-7): " choice
+        read -p "Select an operation (0-10): " choice
         case $choice in
             1) get_token ;;
             2) get_organizations; read -p 'Organization ID: ' ORG_ID ;;
             3) get_terminal_groups; read -p 'Terminal group: ' TERMINAL_GROUP ;;
             4) get_payment_types ;;
             5) get_customer_info ;;
-            6) reset_org_id ;;
-            7) show_status ;;
+            6) get_nomenclature ;;
+            7) get_external_menus ;;
+            8) get_menu_by_id ;;
+            9) reset_org_id ;;
+            10) show_status ;;
             0|q|Q) echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
-            *) echo -e "${RED}Incorrect choice! Please select 0-7${NC}" ;;
+            *) echo -e "${RED}Incorrect choice! Please select 0-10${NC}" ;;
         esac
         echo ""
         read -p "Press Enter to continue..."
