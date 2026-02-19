@@ -225,6 +225,7 @@ reset_org_id() {
 # Function for showing the current status
 show_status() {
     echo -e "${YELLOW}=== Current Status ===${NC}"
+    
     if [[ -z $TOKEN ]]; then
         echo -e "Token: ${RED}not received${NC}"
     else
@@ -290,7 +291,7 @@ main() {
             4) get_payment_types ;;
             5) get_customer_info ;;
             6) get_nomenclature ;;
-            7) get_external_menus read -p 'Iiko Web Menu ID: ' ExternalIikoWebMenu_ID ;;
+            7) get_external_menus; read -p 'Iiko Web Menu ID: ' ExternalIikoWebMenu_ID ;;
             8) get_menu_by_id ;;
             9) reset_org_id ;;
             10) show_status ;;
