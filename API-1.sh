@@ -38,12 +38,44 @@ get_organizations() {
         echo -e "${RED}Error: Token not received. Please obtain a token first.${NC}"
         return 1
     fi 
+    # We get a list of organizations and save it to a temporary file
+    local temp_file=$(mktemp)
     curl -sX GET \
         --url https://api-ru.iiko.services/api/1/organizations \
         --header "Authorization: Bearer $TOKEN" \
         --header 'Content-Type: application/json' \
         --data "{\"returnAdditionalInfo\": true, \"includeDisabled\": true}" | \
-        jq -r '.organizations[] | "ID: \(.id)\nName: \(.name)\n---"'
+        jq -r '.organizations[] | "ID: \(.id)\nName: \(.name)\n---"' > "$temp_file"
+    # Check if the request was successful
+    if [[ ! -s "$temp_file" ]]; then
+        echo -e "${RED}Error: Failed to retrieve organizations or no organizations found${NC}"
+        rm -f "$temp_file"
+        return 1
+    fi  
+    # Ask the user about the viewing method
+    echo -e "${YELLOW}How would you like to view the organizations?${NC}"
+    echo "1) View in terminal (all at once)"
+    echo "2) View with less (searchable)"
+    read -p "Select option (1 or 2): " view_option 
+    case $view_option in
+        2)
+            echo -e "${GREEN}Opening less... Use / to search, q to quit${NC}"
+            less "$temp_file"
+            ;;
+        *)
+            echo -e "${GREEN}=== Organizations List ===${NC}"
+            cat "$temp_file"
+            ;;
+    esac
+    # We suggest entering the organization ID from the viewed list
+    echo ""
+    read -p "Enter Organization ID from the list above (or press Enter to skip): " selected_org_id
+    if [[ ! -z $selected_org_id ]]; then
+        ORG_ID="$selected_org_id"
+        echo -e "${GREEN}Organization ID set to: ${BLUE}$ORG_ID${NC}"
+    fi  
+    # Clear the temporary file
+    rm -f "$temp_file"
 }
 
 # Function for getting terminal groups
