@@ -18,10 +18,32 @@ get_token() {
     echo -e "${YELLOW}=== Getting an authentication token ===${NC}"
     read -p "Enter your API key: " API_KEY
     echo
-    TOKEN=$(curl -sX POST \
-        --url https://api-ru.iiko.services/api/1/access_token \
-        --header 'Content-Type: application/json' \
-        --data "{ \"apiLogin\": \"$API_KEY\" }" | jq -r '.token')    
+    
+    # Спрашиваем, нужен ли секретный ключ
+    read -p "Do you have a secret key? (y/n): " HAS_SECRET
+    echo
+    
+    if [[ $HAS_SECRET =~ ^[Yy]$ ]]; then
+        read -sp "Enter your secret key: " SECRET_KEY
+        echo
+        echo
+        
+        # Запрос с секретным ключом
+        TOKEN=$(curl -sX POST \
+            --url https://api-ru.iiko.services/api/1/access_token \
+            --header 'Content-Type: application/json' \
+            --data "{
+                \"apiLogin\": \"$API_KEY\",
+                \"apiSecret\": \"$SECRET_KEY\"
+            }" | jq -r '.token')
+    else
+        # Запрос без секретного ключа
+        TOKEN=$(curl -sX POST \
+            --url https://api-ru.iiko.services/api/1/access_token \
+            --header 'Content-Type: application/json' \
+            --data "{ \"apiLogin\": \"$API_KEY\" }" | jq -r '.token')
+    fi
+    
     if [[ $TOKEN != null && $TOKEN != "" ]]; then
         echo -e "${GREEN}Token successfully received!${NC}"
         echo -e "Token: ${BLUE}$TOKEN${NC}"
