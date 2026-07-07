@@ -16,33 +16,22 @@ ExternalIikoWebMenu_ID=""
 # Function for getting a token
 get_token() {
     echo -e "${YELLOW}=== Getting an authentication token ===${NC}"
+    
+    local APP_ID="18ae92b1-3810-4cdb-beea-33a701152759"
+    local CLIENT_SECRET="sWTLs5NBeIh-G99-P-XZbR1jmr-Gw-DAZNfIjvLKVXk="
+    
     read -p "Enter your API key: " API_KEY
     echo
     
-    # Спрашиваем, нужен ли секретный ключ
-    read -p "Do you have a secret key? (y/n): " HAS_SECRET
-    echo
-    
-    if [[ $HAS_SECRET =~ ^[Yy]$ ]]; then
-        read -sp "Enter your secret key: " SECRET_KEY
-        echo
-        echo
-        
-        # Запрос с секретным ключом
-        TOKEN=$(curl -sX POST \
-            --url https://api-ru.iiko.services/api/1/access_token \
-            --header 'Content-Type: application/json' \
-            --data "{
-                \"apiLogin\": \"$API_KEY\",
-                \"apiSecret\": \"$SECRET_KEY\"
-            }" | jq -r '.token')
-    else
-        # Запрос без секретного ключа
-        TOKEN=$(curl -sX POST \
-            --url https://api-ru.iiko.services/api/1/access_token \
-            --header 'Content-Type: application/json' \
-            --data "{ \"apiLogin\": \"$API_KEY\" }" | jq -r '.token')
-    fi
+    # Запрос с App ID, Client Secret и API Key
+    TOKEN=$(curl -sX POST \
+        --url https://api-ru.iiko.services/api/v2/access_token \
+        --header 'Content-Type: application/json' \
+        --data "{
+            \"appId\": \"$APP_ID\",
+            \"clientSecret\": \"$CLIENT_SECRET\",
+            \"apiLogin\": \"$API_KEY\"
+        }" | jq -r '.token')
     
     if [[ $TOKEN != null && $TOKEN != "" ]]; then
         echo -e "${GREEN}Token successfully received!${NC}"
