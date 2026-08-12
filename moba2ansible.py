@@ -9,7 +9,6 @@ from collections import defaultdict
 class KioskManager:
     def __init__(self):
         self.ini_file = None
-        self.ssh_config_file = None
         self.target_host = None
         self.groups = []
         self.group_hosts = {}
@@ -23,21 +22,6 @@ class KioskManager:
             if f.endswith('.ini') and os.path.isfile(f):
                 files.append(f)
         return sorted(files)
-    
-    def find_ssh_config(self):
-        """Находит SSH конфиг файл в текущей директории"""
-        possible_names = ['ssh_config_output', 'config', 'ssh_config', '.ssh/config']
-        
-        for name in possible_names:
-            if os.path.exists(name) and os.path.isfile(name):
-                return name
-        
-        # Проверяем ~/.ssh/config
-        home_config = os.path.expanduser('~/.ssh/config')
-        if os.path.exists(home_config):
-            return home_config
-            
-        return None
     
     def parse_ini_with_hierarchy(self, filepath):
         """Парсит INI файл с сохранением иерархии"""
@@ -270,8 +254,6 @@ class KioskManager:
         print("              ВЫБЕРИ ХОСТ ИЛИ ГРУППУ")
         print("=" * 60)
         print(f"  INI файл: {self.ini_file}")
-        if self.ssh_config_file:
-            print(f"  SSH config: {self.ssh_config_file}")
         print("=" * 60)
         print("GROUP HIERARCHY:")
         print("-" * 60)
@@ -331,41 +313,32 @@ class KioskManager:
             print("[ERROR] Введите число или F!")
             return False
     
-    def setup_ssh_config(self):
-        """Настраивает SSH конфиг для Ansible"""
-        # Ищем SSH конфиг
-        self.ssh_config_file = self.find_ssh_config()
+    def cleanup_ssh_env(self):
+        """Очищает переменные окружения, мешающие SSH"""
+        # Удаляем переменные, которые могут указывать на несуществующий конфиг
+        problematic_vars = ['ANSIBLE_SSH_ARGS', 'GIT_SSH_COMMAND', 'SSH_CONFIG']
+        for var in problematic_vars:
+            if var in os.environ:
+                print(f"[INFO] Удаляем переменную {var}={os.environ[var]}")
+                del os.environ[var]
         
-        if self.ssh_config_file:
-            # Создаем ссылку или копируем в ~/.ssh/config_mobaxterm
-            target = os.path.expanduser("~/.ssh/config_mobaxterm")
-            ssh_dir = os.path.expanduser("~/.ssh")
-            
-            # Создаем .ssh директорию если её нет
-            if not os.path.exists(ssh_dir):
-                os.makedirs(ssh_dir, 0o700)
-            
-            # Копируем или создаем символическую ссылку
-            if not os.path.exists(target):
-                try:
-                    # Пробуем создать символическую ссылку
-                    os.symlink(os.path.abspath(self.ssh_config_file), target)
-                    print(f"[OK] Создана ссылка: {target} -> {self.ssh_config_file}")
-                except:
-                    # Если не получается, копируем файл
-                    import shutil
-                    shutil.copy2(self.ssh_config_file, target)
-                    print(f"[OK] Скопирован конфиг: {self.ssh_config_file} -> {target}")
-                os.chmod(target, 0o600)
-            else:
-                print(f"[OK] SSH конфиг уже существует: {target}")
-            
-            # Устанавливаем переменную окружения для Ansible
-            os.environ['ANSIBLE_SSH_ARGS'] = f"-F {target}"
-            return True
-        else:
-            print("[WARN] SSH конфиг не найден, будет использован стандартный")
-            return False
+        # Также проверяем ~/.ssh/config на наличие ссылки на config_mobaxterm
+        ssh_config = os.path.expanduser('~/.ssh/config')
+        if os.path.exists(ssh_config):
+            with open(ssh_config, 'r') as f:
+                content = f.read()
+                if 'config_mobaxterm' in content:
+                    print("[WARN] В ~/.ssh/config найдена ссылка на config_mobaxterm")
+                    print("[INFO] Создаем резервную копию и исправляем...")
+                    backup = ssh_config + '.bak'
+                    os.rename(ssh_config, backup)
+                    print(f"[INFO] Создан бэкап: {backup}")
+                    # Создаем новый пустой конфиг
+                    with open(ssh_config, 'w') as f:
+                        f.write("# Clean config created by KioskManager\n")
+                        f.write("Host *\n")
+                        f.write("    StrictHostKeyChecking no\n")
+                        f.write("    UserKnownHostsFile /dev/null\n")
     
     def run_ansible(self, args):
         """Запускает ansible с аргументами"""
@@ -373,14 +346,8 @@ class KioskManager:
             print("[ERROR] Не выбрана точка!")
             return
         
-        # Формируем команду с учетом SSH конфига
+        # Формируем команду
         cmd = f"ansible -i {self.ini_file} {self.target_host} {args}"
-        
-        # Добавляем SSH конфиг если он есть
-        if self.ssh_config_file:
-            ssh_config_path = os.path.expanduser("~/.ssh/config_mobaxterm")
-            if os.path.exists(ssh_config_path):
-                cmd += f" --ssh-common-args='-F {ssh_config_path}'"
         
         print(f"\n[RUN] Выполняю: {cmd}")
         print("-" * 60)
@@ -546,7 +513,6 @@ class KioskManager:
             print("              УПРАВЛЕНИЕ КИОСКАМИ")
             print("=" * 60)
             print(f"  INI файл: {self.ini_file if self.ini_file else 'не выбран'}")
-            print(f"  SSH конфиг: {self.ssh_config_file if self.ssh_config_file else 'стандартный'}")
             print(f"  Точка:    {self.target_host if self.target_host else 'не выбрана'}")
             if self.target_host:
                 # Показываем количество хостов в выбранной группе
@@ -599,8 +565,8 @@ class KioskManager:
 def main():
     manager = KioskManager()
     
-    # Настраиваем SSH конфиг
-    manager.setup_ssh_config()
+    # Очищаем переменные окружения, мешающие SSH
+    manager.cleanup_ssh_env()
     
     # Выбор INI файла
     if not manager.select_ini_file():
