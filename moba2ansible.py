@@ -12,6 +12,8 @@ class KioskManager:
         self.target_host = None
         self.groups = []
         self.group_hosts = {}
+        self.tree = {}
+        self.flat_groups = []
         
     def find_ini_files(self):
         """Находит все .ini файлы в текущей директории"""
@@ -21,24 +23,23 @@ class KioskManager:
                 files.append(f)
         return sorted(files)
     
-    def parse_ini_simple(self, filepath):
-        """Простой парсинг INI файла - извлекает группы и хосты"""
+    def parse_ini_with_hierarchy(self, filepath):
+        """Парсит INI файл с сохранением иерархии"""
         if not os.path.exists(filepath):
             print(f"❌ Файл {filepath} не найден!")
             return None
         
         groups = {}
+        children = defaultdict(list)
         current_group = None
+        is_parent = {}
         
         with open(filepath, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         
-        for line in lines:
-            line = line.strip()
-            
-            # Пропускаем пустые строки и комментарии
-            if not line or line.startswith('#'):
-                continue
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
             
             # Проверяем на секцию
             if line.startswith('[') and line.endswith(']'):
@@ -46,33 +47,109 @@ class KioskManager:
                 
                 # Пропускаем служебные секции
                 if section in ['all:vars', 'all_hosts']:
-                    current_group = None
+                    i += 1
                     continue
                 
-                # Если это children секция, пропускаем
+                # Проверяем, является ли секция children
                 if ':children' in section:
-                    current_group = None
+                    parent = section.replace(':children', '')
+                    # Читаем детей
+                    i += 1
+                    while i < len(lines):
+                        child_line = lines[i].strip()
+                        if child_line.startswith('[') and child_line.endswith(']'):
+                            break
+                        if child_line and not child_line.startswith('#'):
+                            children[parent].append(child_line)
+                        i += 1
                     continue
-                
-                # Это обычная группа
-                current_group = section
-                if current_group not in groups:
-                    groups[current_group] = []
-                continue
+                else:
+                    current_group = section
+                    if current_group not in groups:
+                        groups[current_group] = []
+                        is_parent[current_group] = False
+                    
+                    # Читаем хосты в группе
+                    i += 1
+                    while i < len(lines):
+                        host_line = lines[i].strip()
+                        if host_line.startswith('[') and host_line.endswith(']'):
+                            break
+                        if host_line and not host_line.startswith('#'):
+                            ip_match = re.match(r'^(\d+\.\d+\.\d+\.\d+)', host_line)
+                            if ip_match:
+                                ip = ip_match.group(1)
+                                if ip not in groups[current_group]:
+                                    groups[current_group].append(ip)
+                        i += 1
+                    continue
+            i += 1
+        
+        # Определяем родительские группы
+        for parent in children.keys():
+            if parent in is_parent:
+                is_parent[parent] = True
+        
+        # Строим дерево
+        tree = {}
+        for group in groups.keys():
+            # Находим корневые группы (у которых нет родителей)
+            is_child = False
+            for parent, child_list in children.items():
+                if group in child_list:
+                    is_child = True
+                    break
+            if not is_child:
+                tree[group] = self._build_subtree(group, children, groups)
+        
+        return tree, groups
+    
+    def _build_subtree(self, group, children, groups):
+        """Рекурсивно строит поддерево"""
+        subtree = {
+            'hosts': groups.get(group, []),
+            'children': {}
+        }
+        
+        for child in children.get(group, []):
+            subtree['children'][child] = self._build_subtree(child, children, groups)
+        
+        return subtree
+    
+    def _flatten_tree(self, tree, prefix=''):
+        """Преобразует дерево в плоский список с путями"""
+        result = []
+        for name, data in tree.items():
+            path = f"{prefix}/{name}" if prefix else name
+            host_count = len(data.get('hosts', []))
+            child_count = len(data.get('children', {}))
             
-            # Если мы внутри группы и строка начинается с IP
-            if current_group and re.match(r'^\d+\.\d+\.\d+\.\d+', line):
-                # Извлекаем IP
-                ip_match = re.match(r'^(\d+\.\d+\.\d+\.\d+)', line)
-                if ip_match:
-                    ip = ip_match.group(1)
-                    if ip not in groups[current_group]:
-                        groups[current_group].append(ip)
+            # Считаем общее количество хостов в поддереве
+            total_hosts = host_count
+            for child in data.get('children', {}).values():
+                total_hosts += self._count_hosts(child)
+            
+            result.append({
+                'name': name,
+                'path': path,
+                'hosts': data.get('hosts', []),
+                'host_count': host_count,
+                'total_hosts': total_hosts,
+                'child_count': child_count,
+                'children': list(data.get('children', {}).keys())
+            })
+            
+            if data.get('children'):
+                result.extend(self._flatten_tree(data['children'], path))
         
-        # Удаляем группы без хостов
-        groups = {k: v for k, v in groups.items() if v}
-        
-        return groups
+        return result
+    
+    def _count_hosts(self, data):
+        """Подсчитывает общее количество хостов в поддереве"""
+        count = len(data.get('hosts', []))
+        for child in data.get('children', {}).values():
+            count += self._count_hosts(child)
+        return count
     
     def select_ini_file(self):
         """Выбор INI файла"""
@@ -87,12 +164,11 @@ class KioskManager:
         print("=" * 60)
         
         for i, f in enumerate(files, 1):
-            # Показываем количество групп и хостов
-            groups = self.parse_ini_simple(f)
-            if groups:
-                host_count = sum(len(h) for h in groups.values())
-                group_count = len(groups)
-                print(f"  {i:2}) {f:<30} (групп: {group_count:3}, хостов: {host_count:4})")
+            tree, groups = self.parse_ini_with_hierarchy(f)
+            if tree:
+                total_hosts = sum(len(h) for h in groups.values()) if groups else 0
+                group_count = len(groups) if groups else 0
+                print(f"  {i:2}) {f:<30} (групп: {group_count:3}, хостов: {total_hosts:4})")
             else:
                 print(f"  {i:2}) {f:<30} (ошибка парсинга)")
         
@@ -118,35 +194,93 @@ class KioskManager:
             print("❌ Введите число!")
             return False
     
+    def print_tree(self, tree, prefix='', is_last=True):
+        """Выводит дерево с отступами"""
+        lines = []
+        items = list(tree.items())
+        for i, (name, data) in enumerate(items):
+            is_last_item = (i == len(items) - 1)
+            
+            # Определяем иконку
+            host_count = len(data.get('hosts', []))
+            child_count = len(data.get('children', {}))
+            total_hosts = self._count_hosts(data)
+            
+            if child_count > 0:
+                icon = '📁'
+                if total_hosts > 0:
+                    icon = '📁'
+            else:
+                icon = '📄'
+            
+            # Формируем строку
+            if is_last_item:
+                line = f"{prefix}└── {icon} {name}"
+                new_prefix = prefix + "    "
+            else:
+                line = f"{prefix}├── {icon} {name}"
+                new_prefix = prefix + "│   "
+            
+            # Добавляем информацию о хостах
+            if host_count > 0:
+                line += f" ({host_count} хостов)"
+            elif child_count > 0 and total_hosts > 0:
+                line += f" (всего {total_hosts} хостов)"
+            
+            lines.append(line)
+            
+            # Рекурсивно выводим детей
+            if data.get('children'):
+                lines.extend(self.print_tree(data['children'], new_prefix, is_last_item))
+        
+        return lines
+    
     def select_host(self):
-        """Выбор хоста/группы"""
+        """Выбор хоста/группы с иерархическим отображением"""
         if not self.ini_file:
             print("❌ INI файл не выбран!")
             return False
         
-        groups = self.parse_ini_simple(self.ini_file)
-        if not groups:
+        tree, groups = self.parse_ini_with_hierarchy(self.ini_file)
+        if not tree:
             print("❌ Не удалось разобрать INI файл!")
-            print("   Возможно, файл пустой или имеет неверный формат.")
             return False
         
-        self.groups = list(groups.keys())
+        self.tree = tree
         self.group_hosts = groups
         
-        # Сортируем группы по количеству хостов
-        self.groups.sort(key=lambda x: len(groups[x]), reverse=True)
+        # Получаем плоский список с путями
+        self.flat_groups = self._flatten_tree(tree)
         
         print("=" * 60)
         print("              ВЫБЕРИ ХОСТ ИЛИ ГРУППУ")
         print("=" * 60)
         print(f"  INI файл: {self.ini_file}")
         print("=" * 60)
-        print("📊 ДОСТУПНЫЕ ГРУППЫ:")
+        print("📊 ИЕРАРХИЯ ГРУПП:")
         print("-" * 60)
         
-        for i, group in enumerate(self.groups, 1):
-            host_count = len(groups[group])
-            print(f"  {i:3}) {group:<50} ({host_count} хостов)")
+        # Выводим дерево
+        tree_lines = self.print_tree(tree)
+        for line in tree_lines:
+            print(line)
+        
+        print("-" * 60)
+        print("  0) Выход")
+        print("  F) Выбрать другой INI файл")
+        print("=" * 60)
+        
+        # Показываем нумерованный список всех групп
+        print("\n📋 ДОСТУПНЫЕ ГРУППЫ ДЛЯ ВЫБОРА:")
+        print("-" * 60)
+        
+        # Сортируем по пути для сохранения иерархии
+        sorted_groups = sorted(self.flat_groups, key=lambda x: x['path'])
+        
+        for i, g in enumerate(sorted_groups, 1):
+            indent = "  " * (g['path'].count('/'))
+            icon = "📁" if g['child_count'] > 0 else "📄"
+            print(f"{indent}{i:3}) {icon} {g['name']} ({g['total_hosts']} хостов)")
         
         print("-" * 60)
         print("  0) Выход")
@@ -154,7 +288,7 @@ class KioskManager:
         print("=" * 60)
         
         try:
-            choice = input("Введите номер (1-{}, 0-выход, F-сменить INI): ".format(len(self.groups)))
+            choice = input("Введите номер (1-{}, 0-выход, F-сменить INI): ".format(len(sorted_groups)))
             
             if choice.upper() == 'F':
                 if self.select_ini_file():
@@ -167,10 +301,12 @@ class KioskManager:
             choice = int(choice)
             if choice == 0:
                 sys.exit(0)
-            elif 1 <= choice <= len(self.groups):
-                self.target_host = self.groups[choice - 1]
-                print(f"✅ Выбрана группа: {self.target_host}")
-                print(f"   Хостов: {len(groups[self.target_host])}")
+            elif 1 <= choice <= len(sorted_groups):
+                selected = sorted_groups[choice - 1]
+                self.target_host = selected['name']
+                print(f"\n✅ Выбрана группа: {selected['path']}")
+                print(f"   Хостов: {selected['host_count']}")
+                print(f"   Всего хостов в поддереве: {selected['total_hosts']}")
                 return True
             else:
                 print("❌ Неверный выбор!")
@@ -351,7 +487,12 @@ class KioskManager:
             print("=" * 60)
             print(f"  INI файл: {self.ini_file if self.ini_file else 'не выбран'}")
             print(f"  Точка:    {self.target_host if self.target_host else 'не выбрана'}")
-            print(f"  Хостов:   {len(self.group_hosts.get(self.target_host, [])) if self.target_host else 0}")
+            if self.target_host:
+                # Показываем количество хостов в выбранной группе
+                for g in self.flat_groups:
+                    if g['name'] == self.target_host:
+                        print(f"  Хостов:   {g['total_hosts']}")
+                        break
             print("=" * 60)
             print("  1) Пинг хоста/группы")
             print("  2) Просмотр директории")
