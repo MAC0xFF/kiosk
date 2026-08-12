@@ -12,6 +12,7 @@ class KioskManager:
         self.target_host = None
         self.groups = []
         self.group_hosts = {}
+        self.host_names = {}  # Словарь для хранения имен хостов {ip: name}
         self.tree = {}
         self.flat_groups = []
         
@@ -24,7 +25,7 @@ class KioskManager:
         return sorted(files)
     
     def parse_ini_with_hierarchy(self, filepath):
-        """Парсит INI файл с сохранением иерархии"""
+        """Парсит INI файл с сохранением иерархии и именами хостов"""
         if not os.path.exists(filepath):
             print(f"[ERROR] Файл {filepath} не найден!")
             return None
@@ -33,6 +34,7 @@ class KioskManager:
         children = defaultdict(list)
         current_group = None
         is_parent = {}
+        self.host_names = {}  # Очищаем словарь имен
         
         with open(filepath, 'r', encoding='utf-8') as f:
             lines = f.readlines()
@@ -76,11 +78,24 @@ class KioskManager:
                         if host_line.startswith('[') and host_line.endswith(']'):
                             break
                         if host_line and not host_line.startswith('#'):
+                            # Ищем IP и имя хоста
                             ip_match = re.match(r'^(\d+\.\d+\.\d+\.\d+)', host_line)
                             if ip_match:
                                 ip = ip_match.group(1)
                                 if ip not in groups[current_group]:
                                     groups[current_group].append(ip)
+                                
+                                # Ищем имя хоста в комментарии или после IP
+                                # Форматы: "10.10.3.99 # HostName" или "10.10.3.99 HostName"
+                                name_match = re.search(r'^\d+\.\d+\.\d+\.\d+\s*#?\s*(.+?)(?:\s*#|$)', host_line)
+                                if name_match:
+                                    host_name = name_match.group(1).strip()
+                                    if host_name and host_name not in ['', 'ansible', 'ssh']:
+                                        self.host_names[ip] = host_name
+                                else:
+                                    # Если имя не найдено, используем IP как имя
+                                    if ip not in self.host_names:
+                                        self.host_names[ip] = ip
                         i += 1
                     continue
             i += 1
@@ -221,7 +236,15 @@ class KioskManager:
             
             # Добавляем информацию о хостах
             if host_count > 0:
-                line += f" ({host_count} hosts)"
+                # Показываем первые несколько хостов с именами
+                hosts_info = []
+                for ip in data.get('hosts', [])[:3]:
+                    host_name = self.host_names.get(ip, ip)
+                    hosts_info.append(f"{ip} ({host_name})")
+                hosts_str = ', '.join(hosts_info)
+                if len(data.get('hosts', [])) > 3:
+                    hosts_str += f", ... и еще {len(data.get('hosts', [])) - 3}"
+                line += f" ({host_count} hosts: {hosts_str})"
             elif child_count > 0 and total_hosts > 0:
                 line += f" (total {total_hosts} hosts)"
             
@@ -351,7 +374,24 @@ class KioskManager:
         
         print(f"\n[RUN] Выполняю: {cmd}")
         print("-" * 60)
-        os.system(cmd)
+        
+        # Запускаем команду и捕获 вывод
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        output, _ = process.communicate()
+        
+        # Обрабатываем вывод, добавляя имена хостов
+        lines = output.split('\n')
+        for line in lines:
+            # Ищем строки с IP адресами
+            ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
+            if ip_match:
+                ip = ip_match.group(1)
+                host_name = self.host_names.get(ip, ip)
+                # Заменяем IP на IP (HostName) в выводе
+                if host_name != ip:
+                    line = line.replace(ip, f"{ip} ({host_name})")
+            print(line)
+        
         print("-" * 60)
     
     def ping(self):
