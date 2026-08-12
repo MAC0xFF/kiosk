@@ -9,6 +9,7 @@ from collections import defaultdict
 class KioskManager:
     def __init__(self):
         self.ini_file = None
+        self.ssh_config_file = None
         self.target_host = None
         self.groups = []
         self.group_hosts = {}
@@ -23,10 +24,25 @@ class KioskManager:
                 files.append(f)
         return sorted(files)
     
+    def find_ssh_config(self):
+        """Находит SSH конфиг файл в текущей директории"""
+        possible_names = ['ssh_config_output', 'config', 'ssh_config', '.ssh/config']
+        
+        for name in possible_names:
+            if os.path.exists(name) and os.path.isfile(name):
+                return name
+        
+        # Проверяем ~/.ssh/config
+        home_config = os.path.expanduser('~/.ssh/config')
+        if os.path.exists(home_config):
+            return home_config
+            
+        return None
+    
     def parse_ini_with_hierarchy(self, filepath):
         """Парсит INI файл с сохранением иерархии"""
         if not os.path.exists(filepath):
-            print(f"❌ Файл {filepath} не найден!")
+            print(f"[ERROR] Файл {filepath} не найден!")
             return None
         
         groups = {}
@@ -156,7 +172,7 @@ class KioskManager:
         files = self.find_ini_files()
         
         if not files:
-            print("❌ Нет .ini файлов в текущей директории!")
+            print("[ERROR] Нет .ini файлов в текущей директории!")
             return False
         
         print("=" * 60)
@@ -188,10 +204,10 @@ class KioskManager:
                 self.ini_file = files[choice - 1]
                 return True
             else:
-                print("❌ Неверный выбор!")
+                print("[ERROR] Неверный выбор!")
                 return False
         except ValueError:
-            print("❌ Введите число!")
+            print("[ERROR] Введите число!")
             return False
     
     def print_tree(self, tree, prefix='', is_last=True):
@@ -201,17 +217,15 @@ class KioskManager:
         for i, (name, data) in enumerate(items):
             is_last_item = (i == len(items) - 1)
             
-            # Определяем иконку
+            # Определяем тип
             host_count = len(data.get('hosts', []))
             child_count = len(data.get('children', {}))
             total_hosts = self._count_hosts(data)
             
             if child_count > 0:
-                icon = '📁'
-                if total_hosts > 0:
-                    icon = '📁'
+                icon = '[DIR]'
             else:
-                icon = '📄'
+                icon = '[HOST]'
             
             # Формируем строку
             if is_last_item:
@@ -223,9 +237,9 @@ class KioskManager:
             
             # Добавляем информацию о хостах
             if host_count > 0:
-                line += f" ({host_count} хостов)"
+                line += f" ({host_count} hosts)"
             elif child_count > 0 and total_hosts > 0:
-                line += f" (всего {total_hosts} хостов)"
+                line += f" (total {total_hosts} hosts)"
             
             lines.append(line)
             
@@ -238,12 +252,12 @@ class KioskManager:
     def select_host(self):
         """Выбор хоста/группы с иерархическим отображением"""
         if not self.ini_file:
-            print("❌ INI файл не выбран!")
+            print("[ERROR] INI файл не выбран!")
             return False
         
         tree, groups = self.parse_ini_with_hierarchy(self.ini_file)
         if not tree:
-            print("❌ Не удалось разобрать INI файл!")
+            print("[ERROR] Не удалось разобрать INI файл!")
             return False
         
         self.tree = tree
@@ -256,8 +270,10 @@ class KioskManager:
         print("              ВЫБЕРИ ХОСТ ИЛИ ГРУППУ")
         print("=" * 60)
         print(f"  INI файл: {self.ini_file}")
+        if self.ssh_config_file:
+            print(f"  SSH config: {self.ssh_config_file}")
         print("=" * 60)
-        print("📊 ИЕРАРХИЯ ГРУПП:")
+        print("GROUP HIERARCHY:")
         print("-" * 60)
         
         # Выводим дерево
@@ -271,7 +287,7 @@ class KioskManager:
         print("=" * 60)
         
         # Показываем нумерованный список всех групп
-        print("\n📋 ДОСТУПНЫЕ ГРУППЫ ДЛЯ ВЫБОРА:")
+        print("\nAVAILABLE GROUPS:")
         print("-" * 60)
         
         # Сортируем по пути для сохранения иерархии
@@ -279,8 +295,8 @@ class KioskManager:
         
         for i, g in enumerate(sorted_groups, 1):
             indent = "  " * (g['path'].count('/'))
-            icon = "📁" if g['child_count'] > 0 else "📄"
-            print(f"{indent}{i:3}) {icon} {g['name']} ({g['total_hosts']} хостов)")
+            icon = "[DIR]" if g['child_count'] > 0 else "[HOST]"
+            print(f"{indent}{i:3}) {icon} {g['name']} ({g['total_hosts']} hosts)")
         
         print("-" * 60)
         print("  0) Выход")
@@ -304,25 +320,69 @@ class KioskManager:
             elif 1 <= choice <= len(sorted_groups):
                 selected = sorted_groups[choice - 1]
                 self.target_host = selected['name']
-                print(f"\n✅ Выбрана группа: {selected['path']}")
+                print(f"\n[OK] Выбрана группа: {selected['path']}")
                 print(f"   Хостов: {selected['host_count']}")
                 print(f"   Всего хостов в поддереве: {selected['total_hosts']}")
                 return True
             else:
-                print("❌ Неверный выбор!")
+                print("[ERROR] Неверный выбор!")
                 return False
         except ValueError:
-            print("❌ Введите число или F!")
+            print("[ERROR] Введите число или F!")
+            return False
+    
+    def setup_ssh_config(self):
+        """Настраивает SSH конфиг для Ansible"""
+        # Ищем SSH конфиг
+        self.ssh_config_file = self.find_ssh_config()
+        
+        if self.ssh_config_file:
+            # Создаем ссылку или копируем в ~/.ssh/config_mobaxterm
+            target = os.path.expanduser("~/.ssh/config_mobaxterm")
+            ssh_dir = os.path.expanduser("~/.ssh")
+            
+            # Создаем .ssh директорию если её нет
+            if not os.path.exists(ssh_dir):
+                os.makedirs(ssh_dir, 0o700)
+            
+            # Копируем или создаем символическую ссылку
+            if not os.path.exists(target):
+                try:
+                    # Пробуем создать символическую ссылку
+                    os.symlink(os.path.abspath(self.ssh_config_file), target)
+                    print(f"[OK] Создана ссылка: {target} -> {self.ssh_config_file}")
+                except:
+                    # Если не получается, копируем файл
+                    import shutil
+                    shutil.copy2(self.ssh_config_file, target)
+                    print(f"[OK] Скопирован конфиг: {self.ssh_config_file} -> {target}")
+                os.chmod(target, 0o600)
+            else:
+                print(f"[OK] SSH конфиг уже существует: {target}")
+            
+            # Устанавливаем переменную окружения для Ansible
+            os.environ['ANSIBLE_SSH_ARGS'] = f"-F {target}"
+            return True
+        else:
+            print("[WARN] SSH конфиг не найден, будет использован стандартный")
             return False
     
     def run_ansible(self, args):
         """Запускает ansible с аргументами"""
         if not self.ini_file or not self.target_host:
-            print("❌ Не выбрана точка!")
+            print("[ERROR] Не выбрана точка!")
             return
         
+        # Формируем команду с учетом SSH конфига
         cmd = f"ansible -i {self.ini_file} {self.target_host} {args}"
-        print(f"\n▶️ Выполняю: {cmd}")
+        
+        # Добавляем SSH конфиг если он есть
+        if self.ssh_config_file:
+            ssh_config_path = os.path.expanduser("~/.ssh/config_mobaxterm")
+            if os.path.exists(ssh_config_path):
+                cmd += f" --ssh-common-args='-F {ssh_config_path}'"
+        
+        print(f"\n[RUN] Выполняю: {cmd}")
         print("-" * 60)
         os.system(cmd)
         print("-" * 60)
@@ -334,11 +394,11 @@ class KioskManager:
     def view_files(self):
         """Просмотр директории"""
         if not self.ini_file or not self.target_host:
-            print("❌ Не выбрана точка!")
+            print("[ERROR] Не выбрана точка!")
             return
         
         print("=" * 60)
-        print("📂 Просмотр директории")
+        print("ПРОСМОТР ДИРЕКТОРИИ")
         print("=" * 60)
         print("Пример: /etc/sst-iiko/  /opt/sst-iiko/img/")
         print("=" * 60)
@@ -350,18 +410,18 @@ class KioskManager:
         if not path.endswith('/'):
             path += '/'
         
-        self.run_ansible(f"-m shell -a \"ls -lth {path} 2>/dev/null || echo '❌ Директория не найдена'\" --become")
+        self.run_ansible(f"-m shell -a \"ls -lth {path} 2>/dev/null || echo '[ERROR] Директория не найдена'\" --become")
     
     def copy_files(self):
         """Копирование файлов"""
         if not self.ini_file or not self.target_host:
-            print("❌ Не выбрана точка!")
+            print("[ERROR] Не выбрана точка!")
             return
         
         print("=" * 60)
-        print("📁 ФАЙЛЫ В ~/WORK/FILES/:")
+        print("ФАЙЛЫ В ~/WORK/FILES/:")
         print("=" * 60)
-        os.system("ls -lth ~/WORK/FILES/ 2>/dev/null || echo '❌ ~/WORK/FILES/ не существует'")
+        os.system("ls -lth ~/WORK/FILES/ 2>/dev/null || echo '[ERROR] ~/WORK/FILES/ не существует'")
         print("=" * 60)
         
         filename = input("Введите имя файла для копирования (или '0' для отмены): ")
@@ -370,7 +430,7 @@ class KioskManager:
         
         source = os.path.expanduser(f"~/WORK/FILES/{filename}")
         if not os.path.exists(source):
-            print(f"❌ {source} не найден!")
+            print(f"[ERROR] {source} не найден!")
             return
         
         dest = input("Введите путь для копирования (или '0' для отмены): ")
@@ -385,11 +445,11 @@ class KioskManager:
     def delete_files(self):
         """Удаление файлов"""
         if not self.ini_file or not self.target_host:
-            print("❌ Не выбрана точка!")
+            print("[ERROR] Не выбрана точка!")
             return
         
         print("=" * 60)
-        print("🗑️ УДАЛЕНИЕ ФАЙЛОВ")
+        print("УДАЛЕНИЕ ФАЙЛОВ")
         print("=" * 60)
         print("Введите путь для поиска:")
         print("Пример: /etc/sst-iiko/  /opt/sst-iiko/")
@@ -427,16 +487,16 @@ class KioskManager:
             self.run_ansible(f"-m shell -a \"find '{path}' -type f -exec md5sum {{}} \\; | grep '^{md5} ' | head -1 | awk '{{print $2}}' | xargs rm -f\" --become")
         
         else:
-            print("❌ Неверный выбор!")
+            print("[ERROR] Неверный выбор!")
     
     def view_config(self):
         """Просмотр конфига"""
         if not self.ini_file or not self.target_host:
-            print("❌ Не выбрана точка!")
+            print("[ERROR] Не выбрана точка!")
             return
         
         print("=" * 60)
-        print("📄 ПРОСМОТР КОНФИГА /etc/sst-iiko/settings.ini")
+        print("ПРОСМОТР КОНФИГА /etc/sst-iiko/settings.ini")
         print("=" * 60)
         print("  1) Весь конфиг")
         print("  2) Конкретные параметры")
@@ -446,46 +506,47 @@ class KioskManager:
         choice = input("Введите номер (0-2): ")
         
         if choice == '1':
-            self.run_ansible("-m shell -a \"cat /etc/sst-iiko/settings.ini 2>/dev/null || echo '❌ Файл не найден'\" --become")
+            self.run_ansible("-m shell -a \"cat /etc/sst-iiko/settings.ini 2>/dev/null || echo '[ERROR] Файл не найден'\" --become")
         elif choice == '2':
             params = input("Введите параметры через пробел: ")
             if params:
                 pattern = '|'.join(params.split())
-                self.run_ansible(f"-m shell -a \"grep -E '^({pattern})=' /etc/sst-iiko/settings.ini 2>/dev/null || echo '❌ Параметры не найдены'\" --become")
+                self.run_ansible(f"-m shell -a \"grep -E '^({pattern})=' /etc/sst-iiko/settings.ini 2>/dev/null || echo '[ERROR] Параметры не найдены'\" --become")
     
     def restart_sst(self):
         """Перезапуск SST"""
         if not self.ini_file or not self.target_host:
-            print("❌ Не выбрана точка!")
+            print("[ERROR] Не выбрана точка!")
             return
         
         print("=" * 60)
-        print("\033[1;33m⚠️ ВНИМАНИЕ! Перезапуск SST!\033[0m")
+        print("ВНИМАНИЕ! Перезапуск SST!")
         print("=" * 60)
         
         confirm = input("Вы уверены? (y/N): ")
         if confirm.lower() != 'y':
-            print("❌ Отменено")
+            print("[CANCEL] Отменено")
             return
         
-        self.run_ansible("-m shell -a \"\nif systemctl is-enabled sst-iiko 2>/dev/null | grep -q enabled; then\n    sudo systemctl restart sst-iiko\n    echo '✅ sst-iiko перезапущен'\nelif systemctl is-enabled xsst-iiko 2>/dev/null | grep -q enabled; then\n    sudo systemctl restart xsst-iiko\n    echo '✅ xsst-iiko перезапущен'\nelse\n    echo '❌ Сервис SST не найден'\nfi\" --become")
+        self.run_ansible("-m shell -a \"\nif systemctl is-enabled sst-iiko 2>/dev/null | grep -q enabled; then\n    sudo systemctl restart sst-iiko\n    echo '[OK] sst-iiko перезапущен'\nelif systemctl is-enabled xsst-iiko 2>/dev/null | grep -q enabled; then\n    sudo systemctl restart xsst-iiko\n    echo '[OK] xsst-iiko перезапущен'\nelse\n    echo '[ERROR] Сервис SST не найден'\nfi\" --become")
     
     def status_sst(self):
         """Статус SST"""
         if not self.ini_file or not self.target_host:
-            print("❌ Не выбрана точка!")
+            print("[ERROR] Не выбрана точка!")
             return
         
-        self.run_ansible("-m shell -a \"\necho '--- Статус сервисов ---'\nsystemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Loaded|Active|Main PID' || echo '❌ Сервисы не найдены'\necho ''\necho '--- Проверка порта 10000 ---'\ncurl -s -o /dev/null -w 'HTTP Code: %{http_code}\\n' localhost:10000 2>/dev/null || echo '❌ Порт 10000 недоступен'\" --become")
+        self.run_ansible("-m shell -a \"\necho '--- Статус сервисов ---'\nsystemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Loaded|Active|Main PID' || echo '[ERROR] Сервисы не найдены'\necho ''\necho '--- Проверка порта 10000 ---'\ncurl -s -o /dev/null -w 'HTTP Code: %{http_code}\\n' localhost:10000 2>/dev/null || echo '[ERROR] Порт 10000 недоступен'\" --become")
     
     def main_menu(self):
         """Главное меню"""
         while True:
             os.system('clear')
             print("=" * 60)
-            print("              🖥️ УПРАВЛЕНИЕ КИОСКАМИ")
+            print("              УПРАВЛЕНИЕ КИОСКАМИ")
             print("=" * 60)
             print(f"  INI файл: {self.ini_file if self.ini_file else 'не выбран'}")
+            print(f"  SSH конфиг: {self.ssh_config_file if self.ssh_config_file else 'стандартный'}")
             print(f"  Точка:    {self.target_host if self.target_host else 'не выбрана'}")
             if self.target_host:
                 # Показываем количество хостов в выбранной группе
@@ -499,10 +560,10 @@ class KioskManager:
             print("  3) Копировать файлы")
             print("  4) Удалить файлы")
             print("  5) Просмотр конфига")
-            print("  6) 🔄 RESTART SST (ОСТОРОЖНО!)")
-            print("  7) 📊 Статус SST")
-            print("  8) 🔄 Сменить точку")
-            print("  I) 🔄 Сменить INI файл")
+            print("  6) RESTART SST (ОСТОРОЖНО!)")
+            print("  7) Статус SST")
+            print("  8) Сменить точку")
+            print("  I) Сменить INI файл")
             print("  0) Выход")
             print("=" * 60)
             
@@ -531,21 +592,24 @@ class KioskManager:
                 if self.select_ini_file():
                     self.select_host()
             else:
-                print("❌ Неверный выбор!")
+                print("[ERROR] Неверный выбор!")
             
             input("\nНажмите Enter для продолжения...")
 
 def main():
     manager = KioskManager()
     
+    # Настраиваем SSH конфиг
+    manager.setup_ssh_config()
+    
     # Выбор INI файла
     if not manager.select_ini_file():
-        print("❌ Не удалось выбрать INI файл!")
+        print("[ERROR] Не удалось выбрать INI файл!")
         sys.exit(1)
     
     # Выбор хоста/группы
     if not manager.select_host():
-        print("❌ Не удалось выбрать точку!")
+        print("[ERROR] Не удалось выбрать точку!")
         sys.exit(1)
     
     # Запуск главного меню
