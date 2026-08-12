@@ -20,7 +20,6 @@ get_ini_from_txt() {
     if [[ -f "$ini_file" ]]; then
         echo "$ini_file"
     else
-        # Ищем любой INI файл в директории
         local first_ini=$(find . -maxdepth 1 -name "*.ini" -type f | head -1 | sed 's/^\.\///')
         if [[ -n "$first_ini" ]]; then
             echo "$first_ini"
@@ -31,9 +30,9 @@ get_ini_from_txt() {
 }
 
 # ============================================================
-# Функция: Парсинг INI файла и показ иерархии
+# Функция: Парсинг INI файла и построение дерева
 # ============================================================
-parse_ini_structure() {
+parse_ini_tree() {
     local ini_file="$1"
     
     if [[ ! -f "$ini_file" ]]; then
@@ -41,47 +40,113 @@ parse_ini_structure() {
         return 1
     fi
     
-    echo "📊 Структура групп в $ini_file:"
-    echo "============================================================"
-    
-    # Извлекаем все группы
-    local groups=()
-    local current_group=""
-    local in_section=0
-    local section_type=""
-    local parent_groups=()
+    # Собираем все группы и их детей
+    declare -A group_children
+    declare -A group_hosts
+    declare -A group_is_parent
     
     # Первый проход: собираем все группы
+    local current_group=""
     while IFS= read -r line; do
         if [[ "$line" =~ ^\[([^\]]+)\]$ ]]; then
-            local group_name="${BASH_REMATCH[1]}"
-            if [[ "$group_name" != "all:vars" && "$group_name" != "all_hosts" ]]; then
-                groups+=("$group_name")
+            current_group="${BASH_REMATCH[1]}"
+            if [[ "$current_group" != "all:vars" && "$current_group" != "all_hosts" ]]; then
+                # Проверяем, есть ли у этой группы children
+                local has_children=$(grep -c "^\[${current_group}:children\]" "$ini_file" 2>/dev/null || echo "0")
+                if [[ $has_children -gt 0 ]]; then
+                    group_is_parent["$current_group"]=1
+                else
+                    group_is_parent["$current_group"]=0
+                    # Считаем хосты в группе
+                    local count=$(sed -n "/^\[${current_group}\]/,/^\[/p" "$ini_file" | grep -c "^[0-9]" 2>/dev/null || echo "0")
+                    group_hosts["$current_group"]="$count"
+                fi
             fi
         fi
     done < "$ini_file"
     
-    # Показываем группы с иерархией
-    local indent=""
-    local prev_depth=0
-    local group_list=()
-    
-    for group in "${groups[@]}"; do
-        # Проверяем, есть ли children для этой группы
-        local has_children=$(grep -c "^\[${group}:children\]" "$ini_file")
-        local host_count=$(grep -c "^${group}$" "$ini_file" 2>/dev/null || echo "0")
-        
-        if [[ $has_children -gt 0 ]]; then
-            echo "  📁 $group/ (родительская группа)"
-            # Находим дочерние группы
+    # Второй проход: собираем детей для родительских групп
+    for group in "${!group_is_parent[@]}"; do
+        if [[ ${group_is_parent[$group]} -eq 1 ]]; then
             local children=$(sed -n "/^\[${group}:children\]/,/^\[/p" "$ini_file" | grep -v "^\[" | grep -v "^$" | head -n -1)
-            for child in $children; do
-                echo "    └── $child"
-            done
+            group_children["$group"]="$children"
+        fi
+    done
+    
+    # Выводим дерево
+    echo "📊 ДЕРЕВО ГРУПП:"
+    echo "============================================================"
+    
+    # Находим корневые группы (те, у которых нет родителей)
+    local all_groups=()
+    for group in "${!group_is_parent[@]}"; do
+        all_groups+=("$group")
+    done
+    
+    # Простая рекурсивная функция для вывода дерева
+    print_tree() {
+        local group="$1"
+        local prefix="$2"
+        local is_last="$3"
+        local children="${group_children[$group]}"
+        
+        if [[ ${group_is_parent[$group]} -eq 1 ]]; then
+            # Родительская группа
+            if [[ -n "$children" ]]; then
+                local child_count=$(echo "$children" | wc -w)
+                echo "${prefix}${is_last:+└── }📁 $group/ ($child_count дочерних групп)"
+                
+                local new_prefix="${prefix}${is_last:+    }"
+                local child_array=($children)
+                local total=${#child_array[@]}
+                local counter=0
+                
+                for child in "${child_array[@]}"; do
+                    ((counter++))
+                    if [[ $counter -eq $total ]]; then
+                        print_tree "$child" "$new_prefix" "true"
+                    else
+                        print_tree "$child" "$new_prefix" "false"
+                    fi
+                done
+            else
+                echo "${prefix}${is_last:+└── }📁 $group/ (пустая)"
+            fi
         else
-            # Подсчитываем хосты в группе
-            local count=$(grep -c "^[0-9]" "$ini_file" 2>/dev/null || echo "0")
-            echo "  📄 $group ($count хостов)"
+            # Листовая группа с хостами
+            local host_count=${group_hosts[$group]:-0}
+            echo "${prefix}${is_last:+└── }📄 $group ($host_count хостов)"
+        fi
+    }
+    
+    # Находим корневые группы (те, у которых нет родителей)
+    # Сначала найдем все группы, которые являются чьими-то детьми
+    local all_children=""
+    for group in "${!group_children[@]}"; do
+        all_children="$all_children ${group_children[$group]}"
+    done
+    
+    local root_groups=()
+    for group in "${!group_is_parent[@]}"; do
+        if [[ ! " $all_children " =~ " $group " ]]; then
+            root_groups+=("$group")
+        fi
+    done
+    
+    # Если нет корневых групп, берем все
+    if [[ ${#root_groups[@]} -eq 0 ]]; then
+        root_groups=("${!group_is_parent[@]}")
+    fi
+    
+    # Выводим дерево
+    local total=${#root_groups[@]}
+    local counter=0
+    for root in "${root_groups[@]}"; do
+        ((counter++))
+        if [[ $counter -eq $total ]]; then
+            print_tree "$root" "" "true"
+        else
+            print_tree "$root" "" "false"
         fi
     done
     
@@ -97,12 +162,10 @@ select_ini_file() {
     echo "                   ВЫБЕРИ INI ФАЙЛ"
     echo "============================================================"
     
-    # Находим все .ini файлы
     mapfile -t ini_files < <(find . -maxdepth 1 -name "*.ini" -type f | sed 's/^\.\///' | sort)
     
     if [[ ${#ini_files[@]} -eq 0 ]]; then
         echo "❌ Нет .ini файлов в текущей директории!"
-        echo "   Создайте inventory файл или используйте существующий."
         sleep 3
         return 1
     fi
@@ -135,9 +198,10 @@ select_ini_file() {
         TARGET_INI="${ini_files[$((ini_num-1))]}"
         echo "✅ Выбран INI файл: $TARGET_INI"
         
-        # Показываем структуру
-        parse_ini_structure "$TARGET_INI"
-        sleep 2
+        # Показываем дерево
+        parse_ini_tree "$TARGET_INI"
+        echo ""
+        read -p "Нажмите Enter для продолжения..."
         return 0
     else
         echo "Ошибка: неверный выбор!"
@@ -147,7 +211,7 @@ select_ini_file() {
 }
 
 # ============================================================
-# Функция: Выбор хоста или группы из INI
+# Функция: Выбор хоста или группы из INI (с древовидным выводом)
 # ============================================================
 select_host_or_group() {
     if [[ ! -f "$TARGET_INI" ]]; then
@@ -162,55 +226,111 @@ select_host_or_group() {
     echo "  INI файл: $TARGET_INI"
     echo "============================================================"
     
-    # Собираем все группы
-    local groups=()
-    local group_hosts=()
+    # Собираем структуру
+    declare -A group_children
+    declare -A group_hosts
+    declare -A group_is_parent
+    declare -A group_number
     
+    local current_group=""
+    local option_num=1
+    local option_map=()
+    
+    # Первый проход: собираем все группы
     while IFS= read -r line; do
         if [[ "$line" =~ ^\[([^\]]+)\]$ ]]; then
-            local group_name="${BASH_REMATCH[1]}"
-            if [[ "$group_name" != "all:vars" && "$group_name" != "all_hosts" ]]; then
-                # Проверяем, есть ли хосты в этой группе
-                local has_hosts=$(sed -n "/^\[${group_name}\]/,/^\[/p" "$TARGET_INI" | grep -c "^[0-9]")
-                if [[ $has_hosts -gt 0 ]]; then
-                    groups+=("$group_name")
-                    group_hosts+=("$has_hosts")
+            current_group="${BASH_REMATCH[1]}"
+            if [[ "$current_group" != "all:vars" && "$current_group" != "all_hosts" ]]; then
+                local has_children=$(grep -c "^\[${current_group}:children\]" "$TARGET_INI" 2>/dev/null || echo "0")
+                if [[ $has_children -gt 0 ]]; then
+                    group_is_parent["$current_group"]=1
+                else
+                    group_is_parent["$current_group"]=0
+                    local count=$(sed -n "/^\[${current_group}\]/,/^\[/p" "$TARGET_INI" | grep -c "^[0-9]" 2>/dev/null || echo "0")
+                    group_hosts["$current_group"]="$count"
                 fi
             fi
         fi
     done < "$TARGET_INI"
     
-    if [[ ${#groups[@]} -eq 0 ]]; then
-        echo "❌ В INI файле нет групп с хостами!"
-        return 1
+    # Второй проход: собираем детей
+    for group in "${!group_is_parent[@]}"; do
+        if [[ ${group_is_parent[$group]} -eq 1 ]]; then
+            local children=$(sed -n "/^\[${group}:children\]/,/^\[/p" "$TARGET_INI" | grep -v "^\[" | grep -v "^$" | head -n -1)
+            group_children["$group"]="$children"
+        fi
+    done
+    
+    # Функция для вывода дерева с номерами
+    print_tree_with_numbers() {
+        local group="$1"
+        local prefix="$2"
+        local is_last="$3"
+        local children="${group_children[$group]}"
+        
+        if [[ ${group_is_parent[$group]} -eq 1 ]]; then
+            # Родительская группа
+            echo "${prefix}${is_last:+└── }📁 $group/"
+            local new_prefix="${prefix}${is_last:+    }"
+            local child_array=($children)
+            local total=${#child_array[@]}
+            local counter=0
+            
+            for child in "${child_array[@]}"; do
+                ((counter++))
+                if [[ $counter -eq $total ]]; then
+                    print_tree_with_numbers "$child" "$new_prefix" "true"
+                else
+                    print_tree_with_numbers "$child" "$new_prefix" "false"
+                fi
+            done
+        else
+            # Листовая группа с хостами
+            local host_count=${group_hosts[$group]:-0}
+            group_number["$group"]="$option_num"
+            option_map+=("$group")
+            printf "%s%s%4d) 📄 %s (%d хостов)\n" \
+                "$prefix" "${is_last:+└── }" "$option_num" "$group" "$host_count"
+            ((option_num++))
+        fi
+    }
+    
+    # Находим корневые группы
+    local all_children=""
+    for group in "${!group_children[@]}"; do
+        all_children="$all_children ${group_children[$group]}"
+    done
+    
+    local root_groups=()
+    for group in "${!group_is_parent[@]}"; do
+        if [[ ! " $all_children " =~ " $group " ]]; then
+            root_groups+=("$group")
+        fi
+    done
+    
+    if [[ ${#root_groups[@]} -eq 0 ]]; then
+        root_groups=("${!group_is_parent[@]}")
     fi
     
-    echo "📊 ДОСТУПНЫЕ ГРУППЫ И ХОСТЫ:"
+    echo "📊 ДЕРЕВО ГРУПП С НОМЕРАМИ:"
     echo "============================================================"
     
-    local option_num=1
-    local option_map=()
-    
-    for i in "${!groups[@]}"; do
-        local group="${groups[$i]}"
-        local count="${group_hosts[$i]}"
-        
-        # Проверяем, является ли группа родительской
-        local is_parent=$(grep -c "^\[${group}:children\]" "$TARGET_INI")
-        if [[ $is_parent -gt 0 ]]; then
-            echo "  📁 $option_num) $group/ (родительская, содержит $count хостов в дочерних группах)"
+    local total=${#root_groups[@]}
+    local counter=0
+    for root in "${root_groups[@]}"; do
+        ((counter++))
+        if [[ $counter -eq $total ]]; then
+            print_tree_with_numbers "$root" "" "true"
         else
-            echo "  📄 $option_num) $group (хостов: $count)"
+            print_tree_with_numbers "$root" "" "false"
         fi
-        option_map+=("group:$group")
-        ((option_num++))
     done
     
     echo "============================================================"
     echo "  0) Выход"
     echo "  F) Выбрать другой INI файл"
     echo "============================================================"
-    read -p "Введите номер (1-${#groups[@]}, 0-выход, F-сменить INI): " choice
+    read -p "Введите номер (1-$((option_num-1)), 0-выход, F-сменить INI): " choice
     
     if [[ "$choice" == "F" || "$choice" == "f" ]]; then
         select_ini_file
@@ -230,50 +350,15 @@ select_host_or_group() {
     if [[ $choice -eq 0 ]]; then
         echo "Выход..."
         exit 0
-    elif [[ $choice -ge 1 && $choice -le ${#groups[@]} ]]; then
-        local selected="${option_map[$((choice-1))]}"
-        local type="${selected%%:*}"
-        local name="${selected#*:}"
+    elif [[ $choice -ge 1 && $choice -le ${#option_map[@]} ]]; then
+        local selected_group="${option_map[$((choice-1))]}"
+        TARGET_GROUP="$selected_group"
+        TARGET_HOST="$selected_group"
         
-        if [[ "$type" == "group" ]]; then
-            # Проверяем, есть ли хосты в группе
-            local has_hosts=$(sed -n "/^\[${name}\]/,/^\[/p" "$TARGET_INI" | grep -c "^[0-9]")
-            
-            if [[ $has_hosts -gt 0 ]]; then
-                # Группа с хостами - используем как цель
-                TARGET_GROUP="$name"
-                TARGET_HOST="$name"
-                echo "✅ Выбрана группа: $name ($has_hosts хостов)"
-                sleep 2
-                return 0
-            else
-                # Родительская группа - показываем дочерние
-                echo "📁 Родительская группа: $name"
-                echo "   Доступные дочерние группы:"
-                local children=$(sed -n "/^\[${name}:children\]/,/^\[/p" "$TARGET_INI" | grep -v "^\[" | grep -v "^$" | head -n -1)
-                
-                local child_options=()
-                local child_num=1
-                for child in $children; do
-                    local child_hosts=$(sed -n "/^\[${child}\]/,/^\[/p" "$TARGET_INI" | grep -c "^[0-9]")
-                    echo "     $child_num) $child ($child_hosts хостов)"
-                    child_options+=("$child")
-                    ((child_num++))
-                done
-                
-                read -p "Выберите дочернюю группу (1-${#child_options[@]}, 0-отмена): " child_choice
-                if [[ $child_choice -ge 1 && $child_choice -le ${#child_options[@]} ]]; then
-                    TARGET_GROUP="${child_options[$((child_choice-1))]}"
-                    TARGET_HOST="$TARGET_GROUP"
-                    echo "✅ Выбрана группа: $TARGET_GROUP"
-                    sleep 2
-                    return 0
-                else
-                    select_host_or_group
-                    return
-                fi
-            fi
-        fi
+        local host_count=${group_hosts[$selected_group]:-0}
+        echo "✅ Выбрана группа: $selected_group ($host_count хостов)"
+        sleep 2
+        return 0
     else
         echo "Ошибка: неверный выбор!"
         sleep 1
@@ -282,7 +367,7 @@ select_host_or_group() {
 }
 
 # ============================================================
-# Функции управления
+# Функции управления (остаются без изменений)
 # ============================================================
 
 ping_hosts() {
