@@ -220,7 +220,7 @@ class IikoAPIClient:
                     print(json.dumps(terminal_groups, indent=2, ensure_ascii=False))
                     print("")
                     
-                    # Предлагаем ввести ID напрямую (как в оригинальном скрипте)
+                    # Предлагаем ввести ID напрямую
                     tg_id = input("Введите ID группы терминалов: ").strip()
                     if tg_id:
                         # Проверяем, есть ли такой ID в списке
@@ -478,6 +478,13 @@ class IikoAPIClient:
         """Очистка экрана"""
         os.system('clear' if os.name == 'posix' else 'cls')
     
+    def _format_status(self, value, default="не установлен"):
+        """Форматирование статуса с цветом"""
+        if value:
+            return f"\033[0;32m{value}\033[0m"  # GREEN
+        else:
+            return f"\033[0;31m{default}\033[0m"  # RED
+    
     def show_menu(self):
         """Отображение главного меню"""
         self.clear_screen()
@@ -486,64 +493,55 @@ class IikoAPIClient:
         self._print_status("========================================", "success")
         print("")
         self._print_status("Доступные операции:", "warning")
+        print("")
         
         # Пункт 1 - Получить токен
         if self.token and self.api_key:
-            self._print_status("1) Получить токен авторизации по TransportApiKey", "info")
-            print(f"    (токен получен, ApiKey: {self.api_key})")
+            print(f"1) Получить токен авторизации по TransportApiKey (\033[0;32mтокен получен, ApiKey: {self.api_key}\033[0m)")
         else:
-            self._print_status("1) Получить токен авторизации по TransportApiKey", "info")
-            print("    (токен не получен)")
+            print(f"1) Получить токен авторизации по TransportApiKey (\033[0;31mтокен не получен\033[0m)")
         
         # Пункт 2 - TransportOrganizationId
         if self.org_id:
-            self._print_status("2) Получить TransportOrganizationId", "info")
-            print(f"    ({self.org_id})")
+            print(f"2) Получить TransportOrganizationId (\033[0;32m{self.org_id}\033[0m)")
         else:
-            self._print_status("2) Получить TransportOrganizationId", "info")
-            print("    (не установлен)")
+            print(f"2) Получить TransportOrganizationId (\033[0;31mне установлен\033[0m)")
         
         # Пункт 3 - TerminalGroupID
         if self.terminal_group_id:
-            self._print_status("3) Получить TerminalGroupID", "info")
-            print(f"    ({self.terminal_group_id})")
+            print(f"3) Получить TerminalGroupID (\033[0;32m{self.terminal_group_id}\033[0m)")
         else:
-            self._print_status("3) Получить TerminalGroupID", "info")
-            print("    (не установлен)")
+            print(f"3) Получить TerminalGroupID (\033[0;31mне установлен\033[0m)")
         
         # Пункт 4 - External ID IikoWeb menu
         if self.external_menu_id:
-            self._print_status("4) Получить External ID IikoWeb menu", "info")
-            print(f"    ({self.external_menu_id})")
+            print(f"4) Получить External ID IikoWeb menu (\033[0;32m{self.external_menu_id}\033[0m)")
         else:
-            self._print_status("4) Получить External ID IikoWeb menu", "info")
-            print("    (не установлен)")
+            print(f"4) Получить External ID IikoWeb menu (\033[0;31mне установлен\033[0m)")
         
         # Пункт 5 - PayProgramId и PaymentTypeId
-        self._print_status("5) Получить PayProgramId и PaymentTypeId", "info")
+        print("5) Получить PayProgramId и PaymentTypeId")
         if self.pay_program_id:
-            print(f"    (PayProgramId: {self.pay_program_id})")
+            print(f"    (PayProgramId: \033[0;32m{self.pay_program_id}\033[0m)")
         else:
-            print(f"    (PayProgramId: не установлен)")
+            print(f"    (PayProgramId: \033[0;31mне установлен\033[0m)")
         if self.payment_type_id:
-            print(f"    (PaymentTypeId: {self.payment_type_id})")
+            print(f"    (PaymentTypeId: \033[0;32m{self.payment_type_id}\033[0m)")
         else:
-            print(f"    (PaymentTypeId: не установлен)")
+            print(f"    (PaymentTypeId: \033[0;31mне установлен\033[0m)")
         
         # Пункт 6 - WalletId
         if self.wallet_id:
-            self._print_status("6) Получить WalletId", "info")
-            print(f"    ({self.wallet_id})")
+            print(f"6) Получить WalletId (\033[0;32m{self.wallet_id}\033[0m)")
         else:
-            self._print_status("6) Получить WalletId", "info")
-            print("    (не установлен)")
+            print(f"6) Получить WalletId (\033[0;31mне установлен\033[0m)")
         
         # Пункты 7-10
-        self._print_status("7) Получить номенклатуру из бэкофиса (сохраняется в файл)", "info")
-        self._print_status("8) Получить меню из IikoWeb по внешнему ID (сохраняется в файл)", "info")
-        self._print_status("9) Сбросить OrganizationId", "info")
-        self._print_status("10) Показать статус", "info")
-        self._print_status("0) Выход", "info")
+        print("7) Получить номенклатуру из бэкофиса (сохраняется в файл)")
+        print("8) Получить меню из IikoWeb по внешнему ID (сохраняется в файл)")
+        print("9) Сбросить OrganizationId")
+        print("10) Показать статус")
+        print("0) Выход")
         
         print("")
         self._print_status("========================================", "success")
