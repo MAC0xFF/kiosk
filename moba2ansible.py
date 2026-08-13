@@ -503,17 +503,15 @@ class KioskManager:
         print("=" * 60)
         print("ВНИМАНИЕ! Перезапуск SST!")
         print("=" * 60)
+        print()
         
-        # Сначала показываем текущий статус
-        print("\nТЕКУЩИЙ СТАТУС СЕРВИСОВ:")
-        print("-" * 60)
-        cmd_status = "systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Active:' | sed 's/^.*Active: //' | sed 's/^/    /'"
-        self.run_ansible(f"-m shell -a \"{cmd_status}\" --become")
-        
-        confirm = input("\nПерезапустить SST? (y/N): ")
+        confirm = input("Перезапустить SST на всех хостах группы? (y/N): ")
         if confirm.lower() != 'y':
             print("[CANCEL] Отменено")
             return
+        
+        print("\nПерезапуск SST...")
+        print("-" * 60)
         
         # Перезапускаем активный сервис
         cmd = """
@@ -522,16 +520,10 @@ if systemctl status sst-iiko 2>/dev/null | grep -q "Active: active"; then
 elif systemctl status xsst-iiko 2>/dev/null | grep -q "Active: active"; then
     sudo systemctl restart xsst-iiko && echo "[OK] xsst-iiko restarted"
 else
-    echo "[ERROR] No active SST service found"
+    echo "[WARN] No active SST service found"
 fi
 """
         self.run_ansible(f"-m shell -a \"{cmd}\" --become")
-        
-        # Показываем новый статус
-        print("\nНОВЫЙ СТАТУС СЕРВИСОВ:")
-        print("-" * 60)
-        cmd_status = "systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Active:' | sed 's/^.*Active: //' | sed 's/^/    /'"
-        self.run_ansible(f"-m shell -a \"{cmd_status}\" --become")
     
     #==================================================================
     # function status_sst()
