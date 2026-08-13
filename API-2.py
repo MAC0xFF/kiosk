@@ -277,57 +277,38 @@ class IikoAPIClient:
         response = self._make_request("POST", "/api/1/payment_types", data)
         
         if response and "paymentTypes" in response:
-            # Выводим полный JSON для ознакомления
-            print(json.dumps(response["paymentTypes"], indent=2, ensure_ascii=False))
-            print("")
-            
-            # Сначала запрашиваем PayProgramId
-            print("Выберите программу лояльности (applicableMarketingCampaigns):")
-            
-            # Собираем все уникальные программы лояльности
-            campaigns = {}
+            # Формируем сокращенный вывод только с нужными полями
+            result = []
             for pt in response["paymentTypes"]:
-                if "applicableMarketingCampaigns" in pt and pt["applicableMarketingCampaigns"]:
-                    for campaign in pt["applicableMarketingCampaigns"]:
-                        if campaign not in campaigns:
-                            campaigns[campaign] = []
-                        campaigns[campaign].append(pt["name"])
+                payment_info = {
+                    "id": pt.get("id"),
+                    "code": pt.get("code"),
+                    "name": pt.get("name"),
+                    "applicableMarketingCampaigns": pt.get("applicableMarketingCampaigns", []),
+                    "paymentTypeKind": pt.get("paymentTypeKind")
+                }
+                result.append(payment_info)
             
-            if campaigns:
-                campaign_list = list(campaigns.keys())
-                for i, campaign in enumerate(campaign_list, 1):
-                    payment_names = ", ".join(campaigns[campaign])
-                    print(f"  {i}) ID: {campaign} (используется в: {payment_names})")
-                print("")
-                
-                print("Введите PayProgramId (applicableMarketingCampaigns):")
-                campaign_choice = input("> ").strip()
-                if campaign_choice:
-                    if campaign_choice in campaigns:
-                        self.pay_program_id = campaign_choice
-                        self._print_status(f"PayProgramId установлен: {self.pay_program_id}", "success")
-                    else:
-                        self._print_status("ID не найден в списке! PayProgramId не установлен.", "error")
-                else:
-                    self._print_status("ID не введен! PayProgramId не установлен.", "error")
-            else:
-                self._print_status("Программы лояльности не найдены", "warning")
-            
-            # Затем запрашиваем PaymentTypeId
-            print("\nВыберите тип оплаты (PaymentTypeId):")
-            print("Доступные типы оплаты:")
-            for i, pt in enumerate(response["paymentTypes"], 1):
-                print(f"  {i}) ID: {pt['id']} - {pt['name']} ({pt.get('paymentTypeKind', 'N/A')})")
+            # Выводим сокращенный JSON
+            print(json.dumps(result, indent=2, ensure_ascii=False))
             print("")
             
-            print("Введите PaymentTypeId (id):")
-            pt_choice = input("> ").strip()
-            if pt_choice:
+            # Запрашиваем PayProgramId
+            pay_program = input("Введите PayProgramId (applicableMarketingCampaigns): ").strip()
+            if pay_program:
+                self.pay_program_id = pay_program
+                self._print_status(f"PayProgramId установлен: {self.pay_program_id}", "success")
+            else:
+                self._print_status("ID не введен! PayProgramId не установлен.", "error")
+            
+            # Запрашиваем PaymentTypeId
+            payment_type = input("Введите PaymentTypeId (id): ").strip()
+            if payment_type:
                 # Проверяем, есть ли такой ID в списке
                 found = False
                 for pt in response["paymentTypes"]:
-                    if pt["id"] == pt_choice:
-                        self.payment_type_id = pt_choice
+                    if pt["id"] == payment_type:
+                        self.payment_type_id = payment_type
                         self.payment_type_name = pt["name"]
                         self._print_status(f"PaymentTypeId установлен: {self.payment_type_id} - {self.payment_type_name}", "success")
                         found = True
