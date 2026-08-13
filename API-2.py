@@ -328,15 +328,32 @@ class IikoAPIClient:
         response = self._make_request("POST", "/api/2/menu", {})
         
         if response:
-            # Пытаемся найти externalMenuId в ответе
+            # Пытаемся найти externalMenus в ответе
             if isinstance(response, dict):
-                if "externalMenuId" in response:
-                    self.external_menu_id = response["externalMenuId"]
-                    self._print_status(f"External ID IikoWeb menu получен: {self.external_menu_id}", "success")
-                elif "externalMenuIds" in response and response["externalMenuIds"]:
-                    self.external_menu_id = response["externalMenuIds"][0]
-                    self._print_status(f"External ID IikoWeb menu получен: {self.external_menu_id}", "success")
+                if "externalMenus" in response and response["externalMenus"]:
+                    # Выводим список меню
+                    print("\nСписок доступных меню:")
+                    for menu in response["externalMenus"]:
+                        print(f"  ID: {menu['id']} - {menu['name']}")
+                    print("")
+                    
+                    # Предлагаем ввести ID напрямую
+                    menu_id = input("Введите ID меню: ").strip()
+                    if menu_id:
+                        # Проверяем, есть ли такой ID в списке
+                        found = False
+                        for menu in response["externalMenus"]:
+                            if menu["id"] == menu_id:
+                                self.external_menu_id = menu_id
+                                self._print_status(f"External ID IikoWeb menu установлен: {self.external_menu_id}", "success")
+                                found = True
+                                break
+                        if not found:
+                            self._print_status("ID не найден в списке! External ID IikoWeb menu не установлен.", "error")
+                    else:
+                        self._print_status("ID не введен! External ID IikoWeb menu не установлен.", "error")
                 else:
+                    # Если структура другая, выводим весь ответ
                     print(json.dumps(response, indent=2, ensure_ascii=False))
                     # Предлагаем ввести вручную
                     menu_id = input("\nВведите External ID IikoWeb menu вручную: ").strip()
