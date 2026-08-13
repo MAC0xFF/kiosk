@@ -623,16 +623,9 @@ class KioskManager:
             print("[CANCEL] Отменено")
             return
         
-        # Проверяем и перезапускаем сервис
-        cmd = """
-if systemctl is-enabled sst-iiko 2>/dev/null | grep -q enabled; then
-    sudo systemctl restart sst-iiko && echo "[OK] sst-iiko restarted"
-elif systemctl is-enabled xsst-iiko 2>/dev/null | grep -q enabled; then
-    sudo systemctl restart xsst-iiko && echo "[OK] xsst-iiko restarted"
-else
-    echo "[ERROR] SST service not found"
-fi
-"""
+        # Используем простую однострочную команду
+        cmd = "if systemctl is-enabled sst-iiko 2>/dev/null | grep -q enabled; then sudo systemctl restart sst-iiko && echo '[OK] sst-iiko restarted'; elif systemctl is-enabled xsst-iiko 2>/dev/null | grep -q enabled; then sudo systemctl restart xsst-iiko && echo '[OK] xsst-iiko restarted'; else echo '[ERROR] SST service not found'; fi"
+        
         self.run_ansible(f"-m shell -a \"{cmd}\" --become")
     
     def status_sst(self):
@@ -641,15 +634,13 @@ fi
             print("[ERROR] Не выбрана точка!")
             return
         
-        # Проверка статуса сервиса
-        cmd = """
-echo "=== SERVICE STATUS ==="
-systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Loaded|Active|Main PID' || echo '[ERROR] Services not found'
-echo ""
-echo "=== SST API STATUS ==="
-curl -sw "HTTP Code: %{http_code}\\n" localhost:10000 2>/dev/null || echo '[ERROR] Port 10000 unavailable'
-"""
-        self.run_ansible(f"-m shell -a \"{cmd}\" --become")
+        # Проверка статуса сервиса - однострочная команда
+        cmd1 = "echo '=== SERVICE STATUS ===' && systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Loaded|Active|Main PID' || echo '[ERROR] Services not found'"
+        self.run_ansible(f"-m shell -a \"{cmd1}\" --become")
+        
+        # Проверка порта - однострочная команда
+        cmd2 = "echo '' && echo '=== SST API STATUS ===' && curl -sw 'HTTP Code: %{http_code}\\n' localhost:10000 2>/dev/null || echo '[ERROR] Port 10000 unavailable'"
+        self.run_ansible(f"-m shell -a \"{cmd2}\" --become")
     
     def main_menu(self):
         """Главное меню"""
