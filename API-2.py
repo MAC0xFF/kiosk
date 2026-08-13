@@ -5,12 +5,9 @@ import os
 import json
 import subprocess
 import tempfile
+import urllib.request
+import urllib.error
 from typing import Optional, Dict, Any
-import requests
-from colorama import init, Fore, Style
-
-# Инициализация colorama для цветного вывода
-init(autoreset=True)
 
 class IikoAPIClient:
     """Клиент для работы с API IIKO"""
@@ -32,18 +29,61 @@ class IikoAPIClient:
     def _print_status(self, message: str, status: str = "info"):
         """Вывод сообщений с цветом"""
         colors = {
-            "info": Fore.CYAN,
-            "success": Fore.GREEN,
-            "error": Fore.RED,
-            "warning": Fore.YELLOW,
-            "highlight": Fore.BLUE
+            "info": "\033[1;34m",    # BLUE
+            "success": "\033[0;32m",  # GREEN
+            "error": "\033[0;31m",    # RED
+            "warning": "\033[1;33m",  # YELLOW
+            "highlight": "\033[1;34m" # BLUE
         }
-        print(f"{colors.get(status, Fore.WHITE)}{message}{Style.RESET_ALL}")
+        reset = "\033[0m"
+        print(f"{colors.get(status, '')}{message}{reset}")
+    
+    def _make_request(self, method: str, endpoint: str, data: Optional[Dict] = None, 
+                     requires_auth: bool = True) -> Optional[Dict]:
+        """Выполнение HTTP запроса к API используя urllib"""
+        url = f"{self.base_url}{endpoint}"
+        
+        if requires_auth:
+            if not self.token:
+                self._print_status("Ошибка: Токен не получен. Сначала получите токен.", "error")
+                return None
+        
+        try:
+            # Подготовка данных
+            if data:
+                json_data = json.dumps(data).encode('utf-8')
+            else:
+                json_data = None
+            
+            # Создание запроса
+            req = urllib.request.Request(url, data=json_data, method=method)
+            req.add_header('Content-Type', 'application/json')
+            
+            if requires_auth:
+                req.add_header('Authorization', f'Bearer {self.token}')
+            
+            # Выполнение запроса
+            with urllib.request.urlopen(req) as response:
+                response_data = response.read().decode('utf-8')
+                return json.loads(response_data)
+                
+        except urllib.error.HTTPError as e:
+            self._print_status(f"HTTP ошибка: {e.code} - {e.reason}", "error")
+            return None
+        except urllib.error.URLError as e:
+            self._print_status(f"Ошибка соединения: {e.reason}", "error")
+            return None
+        except json.JSONDecodeError as e:
+            self._print_status(f"Ошибка парсинга JSON: {e}", "error")
+            return None
+        except Exception as e:
+            self._print_status(f"Ошибка запроса: {e}", "error")
+            return None
     
     def _get_org_id(self) -> bool:
         """Получение ID организации от пользователя"""
         if self.org_id:
-            self._print_status(f"Текущий ID организации: {Fore.BLUE}{self.org_id}", "info")
+            self._print_status(f"Текущий ID организации: {self.org_id}", "highlight")
             choice = input("Нажмите Enter чтобы использовать текущий, или введите новый ID: ").strip()
             if choice:
                 self.org_id = choice
@@ -53,30 +93,6 @@ class IikoAPIClient:
                 self._print_status("ID организации не может быть пустым!", "error")
                 return False
         return True
-    
-    def _make_request(self, method: str, endpoint: str, data: Optional[Dict] = None, 
-                     requires_auth: bool = True) -> Optional[Dict]:
-        """Выполнение HTTP запроса к API"""
-        url = f"{self.base_url}{endpoint}"
-        headers = {"Content-Type": "application/json"}
-        
-        if requires_auth:
-            if not self.token:
-                self._print_status("Ошибка: Токен не получен. Сначала получите токен.", "error")
-                return None
-            headers["Authorization"] = f"Bearer {self.token}"
-        
-        try:
-            if method.upper() == "GET":
-                response = requests.get(url, headers=headers, params=data)
-            else:
-                response = requests.post(url, headers=headers, json=data)
-            
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            self._print_status(f"Ошибка запроса: {e}", "error")
-            return None
     
     def get_token(self):
         """Получение токена авторизации"""
@@ -99,7 +115,7 @@ class IikoAPIClient:
         if response and "token" in response:
             self.token = response["token"]
             self._print_status("Токен успешно получен!", "success")
-            self._print_status(f"Токен: {Fore.BLUE}{self.token}", "info")
+            self._print_status(f"Токен: {self.token}", "highlight")
         else:
             self._print_status("Ошибка получения токена!", "error")
             self.token = None
@@ -144,7 +160,7 @@ class IikoAPIClient:
         org_id = input("\nВведите ID организации из списка (или Enter чтобы пропустить): ").strip()
         if org_id:
             self.org_id = org_id
-            self._print_status(f"ID организации установлен: {Fore.BLUE}{self.org_id}", "success")
+            self._print_status(f"ID организации установлен: {self.org_id}", "success")
         
         # Удаляем временный файл
         os.unlink(temp_file.name)
@@ -322,22 +338,22 @@ class IikoAPIClient:
             self._print_status("Токен: получен", "success")
         
         if self.api_key:
-            self._print_status(f"API ключ: {Fore.BLUE}{self.api_key}", "info")
+            self._print_status(f"API ключ: {self.api_key}", "highlight")
         
         if not self.org_id:
             self._print_status("ID организации: не установлен", "error")
         else:
-            self._print_status(f"ID организации: {Fore.BLUE}{self.org_id}", "info")
+            self._print_status(f"ID организации: {self.org_id}", "highlight")
         
         if not self.terminal_group:
             self._print_status("Группа терминалов: не установлена", "error")
         else:
-            self._print_status(f"Группа терминалов: {Fore.BLUE}{self.terminal_group}", "info")
+            self._print_status(f"Группа терминалов: {self.terminal_group}", "highlight")
         
         if not self.external_menu_id:
             self._print_status("Внешний ID меню Iiko Web: не установлен", "error")
         else:
-            self._print_status(f"Внешний ID меню Iiko Web: {Fore.BLUE}{self.external_menu_id}", "info")
+            self._print_status(f"Внешний ID меню Iiko Web: {self.external_menu_id}", "highlight")
     
     def clear_screen(self):
         """Очистка экрана"""
