@@ -382,6 +382,8 @@ class KioskManager:
         # Разбиваем вывод на строки и обрабатываем
         lines = output.split('\n')
         i = 0
+        host_counter = 0
+        
         while i < len(lines):
             line = lines[i]
             
@@ -389,12 +391,17 @@ class KioskManager:
             # Ищем IP адрес в строке
             ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
             if ip_match:
+                host_counter += 1
                 ip = ip_match.group(1)
                 host_name = self.host_names.get(ip, ip)
                 
                 # Заменяем IP на IP (HostName) в строке с результатом
                 if host_name != ip:
                     line = line.replace(ip, f"{ip} ({host_name})")
+                
+                # Выводим разделитель перед хостом (кроме первого)
+                if host_counter > 1:
+                    print("=" * 60)
                 
                 # Выводим строку хоста
                 print(line)
@@ -415,9 +422,8 @@ class KioskManager:
                         print(next_line)
                     i += 1
                 
-                # Добавляем пустую строку между хостами
-                if i < len(lines):
-                    print()  # Пустая строка
+                # Добавляем пустую строку после блока
+                print()
                 continue
             else:
                 # Если строка не содержит IP (обычно предупреждения или заголовки)
