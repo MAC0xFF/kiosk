@@ -64,7 +64,6 @@ parse_ini() {
 #==================================================================
 get_hosts_count() {
     local group=$1
-    # Считаем количество IP адресов в группе
     local count=$(grep -A 100 "\[$group\]" "$INI_FILE" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | wc -l)
     echo "$count"
 }
@@ -74,7 +73,6 @@ get_hosts_count() {
 #==================================================================
 get_host_names() {
     local group=$1
-    # Извлекаем IP и имена хостов из группы
     grep -A 100 "\[$group\]" "$INI_FILE" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | while read line; do
         local ip=$(echo "$line" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
         local name=$(echo "$line" | sed 's/^[0-9.]*#\?//' | sed 's/#.*//' | xargs)
@@ -157,8 +155,65 @@ run_ansible() {
     echo ""
     echo -e "${BLUE}[RUN] Выполняю: $cmd${NC}"
     echo "------------------------------------------------------------"
-    eval "$cmd"
-    echo "------------------------------------------------------------"
+    
+    # Временный файл для вывода
+    local temp_file=$(mktemp)
+    eval "$cmd" > "$temp_file" 2>&1
+    
+    # Парсим вывод
+    local total_hosts=0
+    local success_hosts=0
+    local unreachable_hosts=0
+    local current_host=""
+    local host_status=""
+    
+    # Обрабатываем вывод построчно
+    while IFS= read -r line; do
+        # Ищем строки с IP адресами и статусом
+        if [[ "$line" =~ ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*\|[[:space:]]*(SUCCESS|UNREACHABLE) ]]; then
+            local ip="${BASH_REMATCH[1]}"
+            local status="${BASH_REMATCH[2]}"
+            
+            # Извлекаем имя хоста из строки
+            local host_name=""
+            if [[ "$line" =~ [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\ \(([^)]+)\) ]]; then
+                host_name="${BASH_REMATCH[1]}"
+            else
+                host_name="$ip"
+            fi
+            
+            # Увеличиваем счетчики
+            ((total_hosts++))
+            if [ "$status" = "SUCCESS" ]; then
+                ((success_hosts++))
+                echo -e "${GREEN}$ip ($host_name) | SUCCESS${NC}"
+            else
+                ((unreachable_hosts++))
+                echo -e "${RED}$ip ($host_name) | UNREACHABLE${NC}"
+            fi
+        fi
+    done < "$temp_file"
+    
+    # Удаляем временный файл
+    rm -f "$temp_file"
+    
+    # Показываем статистику
+    echo ""
+    echo "============================================================"
+    if [ $total_hosts -gt 0 ]; then
+        echo -e "${BLUE}СТАТИСТИКА:${NC}"
+        echo -e "  ${GREEN}Доступно: $success_hosts${NC}"
+        echo -e "  ${RED}Недоступно: $unreachable_hosts${NC}"
+        echo -e "  ${YELLOW}Всего: $total_hosts${NC}"
+        if [ $success_hosts -eq $total_hosts ]; then
+            echo -e "${GREEN}✅ Все хосты доступны!${NC}"
+        elif [ $success_hosts -eq 0 ]; then
+            echo -e "${RED}❌ Все хосты недоступны!${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Доступно $success_hosts из $total_hosts хостов${NC}"
+        fi
+    fi
+    echo "============================================================"
 }
 
 #==================================================================
@@ -192,7 +247,13 @@ view_files() {
         path="${path}/"
     fi
     
-    run_ansible "-m shell -a \"ls -lth $path 2>/dev/null || echo '[ERROR] Директория не найдена'\" --become"
+    # Запускаем ansible с выводом как есть (для простых команд)
+    local cmd="$ANSIBLE_CMD -i $INI_FILE $TARGET_HOST -m shell -a \"ls -lth $path 2>/dev/null || echo '[ERROR] Директория не найдена'\" --become"
+    echo ""
+    echo -e "${BLUE}[RUN] Выполняю: $cmd${NC}"
+    echo "------------------------------------------------------------"
+    eval "$cmd"
+    echo "------------------------------------------------------------"
 }
 
 #==================================================================
@@ -230,7 +291,12 @@ copy_files() {
         dest="${dest}/"
     fi
     
-    run_ansible "-m copy -a \"src=$source dest=$dest\" --become"
+    local cmd="$ANSIBLE_CMD -i $INI_FILE $TARGET_HOST -m copy -a \"src=$source dest=$dest\" --become"
+    echo ""
+    echo -e "${BLUE}[RUN] Выполняю: $cmd${NC}"
+    echo "------------------------------------------------------------"
+    eval "$cmd"
+    echo "------------------------------------------------------------"
 }
 
 #==================================================================
@@ -276,14 +342,24 @@ delete_files() {
         local full_path="${path}${filename}"
         read -p "Удалить '$full_path'? (y/n): " confirm
         if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-            run_ansible "-m file -a \"path='$full_path' state=absent\" --become"
+            local cmd="$ANSIBLE_CMD -i $INI_FILE $TARGET_HOST -m file -a \"path='$full_path' state=absent\" --become"
+            echo ""
+            echo -e "${BLUE}[RUN] Выполняю: $cmd${NC}"
+            echo "------------------------------------------------------------"
+            eval "$cmd"
+            echo "------------------------------------------------------------"
         fi
     elif [ "$method" = "2" ]; then
         read -p "Введите MD5 сумму файла: " md5
         if [ -z "$md5" ]; then
             return 1
         fi
-        run_ansible "-m shell -a \"find '$path' -type f -exec md5sum {} \\; | grep '^$md5 ' | head -1 | awk '{print \$2}' | xargs rm -f\" --become"
+        local cmd="$ANSIBLE_CMD -i $INI_FILE $TARGET_HOST -m shell -a \"find '$path' -type f -exec md5sum {} \\; | grep '^$md5 ' | head -1 | awk '{print \$2}' | xargs rm -f\" --become"
+        echo ""
+        echo -e "${BLUE}[RUN] Выполняю: $cmd${NC}"
+        echo "------------------------------------------------------------"
+        eval "$cmd"
+        echo "------------------------------------------------------------"
     else
         echo -e "${RED}[ERROR] Неверный выбор!${NC}"
     fi
@@ -311,13 +387,23 @@ view_config() {
     
     case $choice in
         1)
-            run_ansible "-m shell -a \"cat /etc/sst-iiko/settings.ini 2>/dev/null || echo '[ERROR] Файл не найден'\" --become"
+            local cmd="$ANSIBLE_CMD -i $INI_FILE $TARGET_HOST -m shell -a \"cat /etc/sst-iiko/settings.ini 2>/dev/null || echo '[ERROR] Файл не найден'\" --become"
+            echo ""
+            echo -e "${BLUE}[RUN] Выполняю: $cmd${NC}"
+            echo "------------------------------------------------------------"
+            eval "$cmd"
+            echo "------------------------------------------------------------"
             ;;
         2)
             read -p "Введите параметры через пробел: " params
             if [ -n "$params" ]; then
                 local pattern=$(echo "$params" | tr ' ' '|')
-                run_ansible "-m shell -a \"grep -E '^($pattern)=' /etc/sst-iiko/settings.ini 2>/dev/null || echo '[ERROR] Параметры не найдены'\" --become"
+                local cmd="$ANSIBLE_CMD -i $INI_FILE $TARGET_HOST -m shell -a \"grep -E '^($pattern)=' /etc/sst-iiko/settings.ini 2>/dev/null || echo '[ERROR] Параметры не найдены'\" --become"
+                echo ""
+                echo -e "${BLUE}[RUN] Выполняю: $cmd${NC}"
+                echo "------------------------------------------------------------"
+                eval "$cmd"
+                echo "------------------------------------------------------------"
             fi
             ;;
         3)
@@ -380,7 +466,12 @@ edit_config() {
     
     local cmd="grep -q '^$param=' /etc/sst-iiko/settings.ini && sed -i 's/^$param=.*/$param=$value/' /etc/sst-iiko/settings.ini || echo '$param=$value' >> /etc/sst-iiko/settings.ini && echo '[OK] $param=$value'"
     
-    run_ansible "-m shell -a \"$cmd\" --become"
+    local full_cmd="$ANSIBLE_CMD -i $INI_FILE $TARGET_HOST -m shell -a \"$cmd\" --become"
+    echo ""
+    echo -e "${BLUE}[RUN] Выполняю: $full_cmd${NC}"
+    echo "------------------------------------------------------------"
+    eval "$full_cmd"
+    echo "------------------------------------------------------------"
 }
 
 #==================================================================
@@ -409,7 +500,12 @@ restart_sst() {
     
     local cmd="if systemctl status sst-iiko 2>/dev/null | grep -q 'Active: active'; then sudo systemctl restart sst-iiko && echo '[OK] sst-iiko restarted'; elif systemctl status xsst-iiko 2>/dev/null | grep -q 'Active: active'; then sudo systemctl restart xsst-iiko && echo '[OK] xsst-iiko restarted'; else echo '[WARN] No active SST service found'; fi"
     
-    run_ansible "-m shell -a \"$cmd\" --become"
+    local full_cmd="$ANSIBLE_CMD -i $INI_FILE $TARGET_HOST -m shell -a \"$cmd\" --become"
+    echo ""
+    echo -e "${BLUE}[RUN] Выполняю: $full_cmd${NC}"
+    echo "------------------------------------------------------------"
+    eval "$full_cmd"
+    echo "------------------------------------------------------------"
 }
 
 #==================================================================
@@ -423,7 +519,12 @@ status_sst() {
     
     local cmd='echo "=== SST STATUS ===" && sst_status=$(systemctl status sst-iiko 2>/dev/null | grep -E "Active:" | sed "s/^.*Active: //") && xsst_status=$(systemctl status xsst-iiko 2>/dev/null | grep -E "Active:" | sed "s/^.*Active: //") && echo "    sst-iiko - $sst_status" && echo "    xsst-iiko - $xsst_status" && echo "" && echo "=== API INFO ===" && curl -sw "HTTP: %{http_code}\n" localhost:10000 2>/dev/null | grep -E "Current state|Hardware|Fiscal|Network|Terminal|deviceName|Theme|Version|HTTP:" || echo "[ERROR] Port 10000 unavailable"'
     
-    run_ansible "-m shell -a '$cmd' --become"
+    local full_cmd="$ANSIBLE_CMD -i $INI_FILE $TARGET_HOST -m shell -a '$cmd' --become"
+    echo ""
+    echo -e "${BLUE}[RUN] Выполняю: $full_cmd${NC}"
+    echo "------------------------------------------------------------"
+    eval "$full_cmd"
+    echo "------------------------------------------------------------"
 }
 
 #==================================================================
