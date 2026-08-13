@@ -301,12 +301,89 @@ class KioskManager:
         
         print("-" * 60)
     
-    #==================================================================
-    # function ping()
-    #==================================================================
-    def ping(self):
-        """Пинг хостов"""
-        self.run_ansible("-m ping")
+#==================================================================
+# function ping()
+#==================================================================
+def ping(self):
+    """Пинг хостов"""
+    if not self.ini_file or not self.target_host:
+        print("[ERROR] Не выбрана точка!")
+        return
+    
+    # Получаем список хостов в выбранной группе
+    hosts = []
+    for g in self.flat_groups:
+        if g['name'] == self.target_host:
+            hosts = g['hosts']
+            break
+    
+    if not hosts:
+        print("[ERROR] Нет хостов в выбранной группе!")
+        return
+    
+    print("=" * 60)
+    print(f"ПИНГ ХОСТОВ: {self.target_host}")
+    print("=" * 60)
+    
+    # Запускаем ansible для всех хостов сразу
+    hosts_str = ",".join(hosts)
+    cmd = f"ansible -i {self.ini_file} {hosts_str} -m ping 2>/dev/null"
+    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    output, error = process.communicate()
+    
+    # Парсим вывод
+    lines = output.split('\n')
+    success_hosts = []
+    failed_hosts = []
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            continue
+        
+        # Ищем IP адрес
+        ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
+        if ip_match:
+            ip = ip_match.group(1)
+            host_name = self.host_names.get(ip, ip)
+            
+            # Определяем статус
+            if "SUCCESS" in line:
+                status = "SUCCESS"
+                success_hosts.append(ip)
+            else:
+                status = "UNREACHABLE!"
+                failed_hosts.append(ip)
+            
+            # Выводим результат
+            print("=" * 60)
+            print(f"{ip} ({host_name}) | {status}")
+            
+            # Пропускаем следующие строки до следующего IP
+            i += 1
+            while i < len(lines):
+                next_line = lines[i].strip()
+                if re.search(r'(\d+\.\d+\.\d+\.\d+)', next_line):
+                    break
+                if next_line and "FAILED" in next_line:
+                    print(f"  {next_line}")
+                i += 1
+            continue
+        i += 1
+    
+    # Выводим статистику
+    total = len(hosts)
+    success_count = len(success_hosts)
+    failed_count = len(failed_hosts)
+    
+    print("=" * 60)
+    print("СТАТИСТИКА:")
+    print(f"  Доступно: {success_count} из {total} хостов")
+    if failed_count > 0:
+        print(f"  Недоступно: {failed_count}")
+    print("=" * 60)
     
     #==================================================================
     # function view_files()
