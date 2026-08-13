@@ -603,23 +603,11 @@ class KioskManager:
             print("[CANCEL] Отменено")
             return
         
-        # Формируем команду для замены параметра с правильным экранированием
-        # Используем одинарные кавычки для всей команды shell
-        cmd = f"""
-if grep -q '^{param}=' /etc/sst-iiko/settings.ini 2>/dev/null; then
-    echo "Param {param} found, replacing..."
-    sed -i 's/^{param}=.*/{param}={value}/' /etc/sst-iiko/settings.ini
-    echo "[OK] {param}={value}"
-else
-    echo "Param {param} not found, adding..."
-    echo '{param}={value}' >> /etc/sst-iiko/settings.ini
-    echo "[OK] {param}={value} (added)"
-fi
-"""
-        # Экранируем для передачи в shell
-        cmd_escaped = cmd.replace('"', '\\"').replace('$', '\\$')
+        # Простой подход - используем sed для замены или добавления
+        # Сначала проверяем существует ли параметр, если нет - добавляем
+        cmd = f"grep -q '^{param}=' /etc/sst-iiko/settings.ini && sed -i 's/^{param}=.*/{param}={value}/' /etc/sst-iiko/settings.ini || echo '{param}={value}' >> /etc/sst-iiko/settings.ini && echo '[OK] {param}={value}'"
         
-        self.run_ansible(f"-m shell -a \"{cmd_escaped}\" --become")
+        self.run_ansible(f"-m shell -a \"{cmd}\" --become")
     
     def restart_sst(self):
         """Перезапуск SST"""
