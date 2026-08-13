@@ -16,6 +16,15 @@ class KioskManager:
         self.tree = {}
         self.flat_groups = []
         
+    def clear_screen(self):
+        """Очищает экран терминала"""
+        # Windows
+        if os.name == 'nt':
+            os.system('cls')
+        # Unix/Linux/Mac
+        else:
+            os.system('clear')
+        
     def parse_ini_with_hierarchy(self, filepath):
         """Парсит INI файл с сохранением иерархии и именами хостов"""
         if not os.path.exists(filepath):
@@ -530,7 +539,7 @@ curl -sw "HTTP: %{http_code}\\n" localhost:10000 2>/dev/null | grep -E 'Current 
     def main_menu(self):
         """Главное меню"""
         while True:
-            os.system('clear')
+            self.clear_screen()
             print("=" * 60)
             print("              УПРАВЛЕНИЕ КИОСКАМИ")
             print("=" * 60)
@@ -580,14 +589,15 @@ curl -sw "HTTP: %{http_code}\\n" localhost:10000 2>/dev/null | grep -E 'Current 
             input("\nНажмите Enter для продолжения...")
 
 def main():
-    # Очищаем терминал при старте
-    os.system('clear')
+    manager = KioskManager()
+    
+    # Очищаем экран при старте
+    manager.clear_screen()
+    
     print("=" * 60)
     print("              ЗАПУСК УПРАВЛЕНИЯ КИОСКАМИ")
     print("=" * 60)
     print()
-    
-    manager = KioskManager()
     
     # Очищаем переменные окружения, мешающие SSH
     manager.cleanup_ssh_env()
