@@ -207,23 +207,29 @@ class IikoAPIClient:
                     for group in response["terminalGroups"]:
                         if "items" in group:
                             for item in group["items"]:
-                                terminal_groups.append({
-                                    "id": item.get("id"),
-                                    "name": item.get("name")
-                                })
+                                # Проверяем наличие дубликатов по ID
+                                if not any(tg["id"] == item.get("id") for tg in terminal_groups):
+                                    terminal_groups.append({
+                                        "id": item.get("id"),
+                                        "name": item.get("name")
+                                    })
                 
                 if "terminalGroupsInSleep" in response and response["terminalGroupsInSleep"]:
                     for group in response["terminalGroupsInSleep"]:
                         if "items" in group:
                             for item in group["items"]:
-                                terminal_groups.append({
-                                    "id": item.get("id"),
-                                    "name": item.get("name")
-                                })
+                                # Проверяем наличие дубликатов по ID
+                                if not any(tg["id"] == item.get("id") for tg in terminal_groups):
+                                    terminal_groups.append({
+                                        "id": item.get("id"),
+                                        "name": item.get("name")
+                                    })
                 
                 if terminal_groups:
-                    # Выводим классический JSON
-                    print(json.dumps(terminal_groups, indent=2, ensure_ascii=False))
+                    # Выводим список групп терминалов как у организаций
+                    print("\nСписок групп терминалов:")
+                    for tg in terminal_groups:
+                        print(f"  ID: {tg['id']} - {tg['name']}")
                     print("")
                     
                     # Предлагаем ввести ID напрямую
