@@ -504,14 +504,34 @@ class KioskManager:
         print("ВНИМАНИЕ! Перезапуск SST!")
         print("=" * 60)
         
-        confirm = input("Вы уверены? (y/N): ")
+        # Сначала показываем текущий статус
+        print("\nТЕКУЩИЙ СТАТУС СЕРВИСОВ:")
+        print("-" * 60)
+        cmd_status = 'echo "    sst-iiko - $(systemctl status sst-iiko 2>/dev/null | grep -E \"Active:\" | sed \"s/.*Active: //\")" && echo "    xsst-iiko - $(systemctl status xsst-iiko 2>/dev/null | grep -E \"Active:\" | sed \"s/.*Active: //\")"'
+        self.run_ansible(f"-m shell -a '{cmd_status}' --become')
+        
+        confirm = input("\nПерезапустить SST? (y/N): ")
         if confirm.lower() != 'y':
             print("[CANCEL] Отменено")
             return
         
-        cmd = "if systemctl is-enabled sst-iiko 2>/dev/null | grep -q enabled; then sudo systemctl restart sst-iiko && echo '[OK] sst-iiko restarted'; elif systemctl is-enabled xsst-iiko 2>/dev/null | grep -q enabled; then sudo systemctl restart xsst-iiko && echo '[OK] xsst-iiko restarted'; else echo '[ERROR] SST service not found'; fi"
-        
+        # Перезапускаем активный сервис
+        cmd = """
+if systemctl status sst-iiko 2>/dev/null | grep -q "Active: active"; then
+    sudo systemctl restart sst-iiko && echo "[OK] sst-iiko restarted"
+elif systemctl status xsst-iiko 2>/dev/null | grep -q "Active: active"; then
+    sudo systemctl restart xsst-iiko && echo "[OK] xsst-iiko restarted"
+else
+    echo "[ERROR] No active SST service found"
+fi
+"""
         self.run_ansible(f"-m shell -a \"{cmd}\" --become")
+        
+        # Показываем новый статус
+        print("\nНОВЫЙ СТАТУС СЕРВИСОВ:")
+        print("-" * 60)
+        cmd_status = 'echo "    sst-iiko - $(systemctl status sst-iiko 2>/dev/null | grep -E \"Active:\" | sed \"s/.*Active: //\")" && echo "    xsst-iiko - $(systemctl status xsst-iiko 2>/dev/null | grep -E \"Active:\" | sed \"s/.*Active: //\")"'
+        self.run_ansible(f"-m shell -a '{cmd_status}' --become')
     
     #==================================================================
     # function status_sst()
