@@ -102,6 +102,20 @@ class IikoAPIClient:
                 return False
         return True
     
+    def _color_value(self, value, default="не установлен"):
+        """Форматирование значения с цветом"""
+        if value:
+            return f"\033[0;32m{value}\033[0m"  # GREEN
+        else:
+            return f"\033[0;31m{default}\033[0m"  # RED
+    
+    def _color_status(self, value):
+        """Форматирование статуса (получен/не получен) с цветом"""
+        if value:
+            return "\033[0;32mполучен\033[0m"  # GREEN
+        else:
+            return "\033[0;31mне получен\033[0m"  # RED
+    
     def get_token(self):
         """Получение токена авторизации"""
         self._print_status("=== Получение токена авторизации по TransportApiKey ===", "warning")
@@ -486,46 +500,46 @@ class IikoAPIClient:
         
         # Пункт 1 - Получить токен
         if self.token and self.api_key:
-            print(f"(токен получен)")
-            print(f"1) Получить токен авторизации по TransportApiKey ({self.api_key})")
+            print(f"(токен {self._color_status(True)})")
+            print(f"1) Получить токен авторизации по TransportApiKey ({self._color_value(self.api_key)})")
         else:
-            print(f"(токен не получен)")
-            print(f"1) Получить токен авторизации по TransportApiKey (не установлен)")
+            print(f"(токен {self._color_status(False)})")
+            print(f"1) Получить токен авторизации по TransportApiKey ({self._color_value(None)})")
         
         # Пункт 2 - TransportOrganizationId
         if self.org_id:
-            print(f"2) Получить TransportOrganizationId ({self.org_id})")
+            print(f"2) Получить TransportOrganizationId ({self._color_value(self.org_id)})")
         else:
-            print(f"2) Получить TransportOrganizationId (не установлен)")
+            print(f"2) Получить TransportOrganizationId ({self._color_value(None)})")
         
         # Пункт 3 - TerminalGroupID
         if self.terminal_group_id:
-            print(f"3) Получить TerminalGroupID ({self.terminal_group_id})")
+            print(f"3) Получить TerminalGroupID ({self._color_value(self.terminal_group_id)})")
         else:
-            print(f"3) Получить TerminalGroupID (не установлен)")
+            print(f"3) Получить TerminalGroupID ({self._color_value(None)})")
         
         # Пункт 4 - External ID IikoWeb menu
         if self.external_menu_id:
-            print(f"4) Получить External ID IikoWeb menu ({self.external_menu_id})")
+            print(f"4) Получить External ID IikoWeb menu ({self._color_value(self.external_menu_id)})")
         else:
-            print(f"4) Получить External ID IikoWeb menu (не установлен)")
+            print(f"4) Получить External ID IikoWeb menu ({self._color_value(None)})")
         
         # Пункт 5 - PayProgramId и PaymentTypeId
         print("5) Получить PayProgramId и PaymentTypeId")
         if self.pay_program_id:
-            print(f"    (PayProgramId (applicableMarketingCampaigns): {self.pay_program_id})")
+            print(f"    (PayProgramId (applicableMarketingCampaigns): {self._color_value(self.pay_program_id)})")
         else:
-            print(f"    (PayProgramId (applicableMarketingCampaigns): не установлен)")
+            print(f"    (PayProgramId (applicableMarketingCampaigns): {self._color_value(None)})")
         if self.payment_type_id:
-            print(f"    (PaymentTypeId (id): {self.payment_type_id})")
+            print(f"    (PaymentTypeId (id): {self._color_value(self.payment_type_id)})")
         else:
-            print(f"    (PaymentTypeId (id): не установлен)")
+            print(f"    (PaymentTypeId (id): {self._color_value(None)})")
         
         # Пункт 6 - WalletId
         if self.wallet_id:
-            print(f"6) Получить WalletId ({self.wallet_id})")
+            print(f"6) Получить WalletId ({self._color_value(self.wallet_id)})")
         else:
-            print(f"6) Получить WalletId (не установлен)")
+            print(f"6) Получить WalletId ({self._color_value(None)})")
         
         # Пункты 7-10
         print("7) Получить номенклатуру из бэкофиса (сохраняется в файл)")
