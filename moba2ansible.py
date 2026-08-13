@@ -603,8 +603,8 @@ class KioskManager:
             print("[CANCEL] Отменено")
             return
         
-        # Простой подход - используем sed для замены или добавления
-        cmd = f"grep -q '^{param}=' /etc/sst-iiko/settings.ini && sed -i 's/^{param}=.*/{param}={value}/' /etc/sst-iiko/settings.ini || echo '{param}={value}' >> /etc/sst-iiko/settings.ini && echo '[OK] {param}={value}'"
+        # Используем python для замены параметра
+        cmd = f"python3 -c \"import re; f=open('/etc/sst-iiko/settings.ini','r'); c=f.read(); f.close(); c=re.sub(r'^{param}=.*$', '{param}={value}', c, flags=re.M); open('/etc/sst-iiko/settings.ini','w').write(c); print('[OK] {param}={value}')\""
         
         self.run_ansible(f"-m shell -a \"{cmd}\" --become")
     
@@ -623,18 +623,9 @@ class KioskManager:
             print("[CANCEL] Отменено")
             return
         
-        # Используем простую команду
-        cmd = """
-if systemctl is-enabled sst-iiko 2>/dev/null | grep -q enabled; then
-    sudo systemctl restart sst-iiko
-    echo '[OK] sst-iiko restarted'
-elif systemctl is-enabled xsst-iiko 2>/dev/null | grep -q enabled; then
-    sudo systemctl restart xsst-iiko
-    echo '[OK] xsst-iiko restarted'
-else
-    echo '[ERROR] SST service not found'
-fi
-"""
+        # Используем простые команды через && и ||
+        cmd = "systemctl is-enabled sst-iiko 2>/dev/null | grep -q enabled && (sudo systemctl restart sst-iiko && echo '[OK] sst-iiko restarted') || (systemctl is-enabled xsst-iiko 2>/dev/null | grep -q enabled && (sudo systemctl restart xsst-iiko && echo '[OK] xsst-iiko restarted') || echo '[ERROR] SST service not found')"
+        
         self.run_ansible(f"-m shell -a \"{cmd}\" --become")
     
     def status_sst(self):
@@ -643,15 +634,14 @@ fi
             print("[ERROR] Не выбрана точка!")
             return
         
-        # Используем простую команду
-        cmd = """
-echo '--- Service Status ---'
-systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Loaded|Active|Main PID' || echo '[ERROR] Services not found'
-echo ''
-echo '--- Port 10000 Check ---'
-curl -s -o /dev/null -w 'HTTP Code: %{http_code}\\n' localhost:10000 2>/dev/null || echo '[ERROR] Port 10000 unavailable'
-"""
-        self.run_ansible(f"-m shell -a \"{cmd}\" --become")
+        # Используем простую однострочную команду
+        cmd1 = "systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Loaded|Active|Main PID' || echo '[ERROR] Services not found'"
+        cmd2 = "curl -s -o /dev/null -w 'HTTP Code: %{http_code}' localhost:10000 2>/dev/null || echo '[ERROR] Port 10000 unavailable'"
+        
+        print("\n--- Service Status ---")
+        self.run_ansible(f"-m shell -a \"{cmd1}\" --become")
+        print("\n--- Port 10000 Check ---")
+        self.run_ansible(f"-m shell -a \"{cmd2}\" --become")
     
     def main_menu(self):
         """Главное меню"""
