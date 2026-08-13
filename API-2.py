@@ -104,7 +104,7 @@ class IikoAPIClient:
     
     def get_token(self):
         """Получение токена авторизации"""
-        self._print_status("=== Получение токена авторизации ===", "warning")
+        self._print_status("=== Получение токена авторизации по ApiKey ===", "warning")
         
         if not self.api_key:
             self.api_key = input("Введите ваш API ключ: ").strip()
@@ -135,7 +135,7 @@ class IikoAPIClient:
     
     def get_organizations(self):
         """Получение списка организаций"""
-        self._print_status("=== Получение списка организаций ===", "warning")
+        self._print_status("=== Получение TransportOrganizationId ===", "warning")
         
         if not self.token:
             self._print_status("Ошибка: Токен не получен. Сначала получите токен.", "error")
@@ -173,14 +173,14 @@ class IikoAPIClient:
         org_id = input("\nВведите ID организации из списка (или Enter чтобы пропустить): ").strip()
         if org_id:
             self.org_id = org_id
-            self._print_status(f"ID организации установлен: {self.org_id}", "success")
+            self._print_status(f"TransportOrganizationId установлен: {self.org_id}", "success")
         
         # Удаляем временный файл
         os.unlink(temp_file.name)
     
     def get_terminal_groups(self):
         """Получение групп терминалов"""
-        self._print_status("=== Получение групп терминалов ===", "warning")
+        self._print_status("=== Получение TerminalGroupID ===", "warning")
         
         if not self.token:
             self._print_status("Ошибка: Токен не получен. Сначала получите токен.", "error")
@@ -216,21 +216,17 @@ class IikoAPIClient:
                                 })
                 
                 if terminal_groups:
-                    print(json.dumps(terminal_groups, indent=2, ensure_ascii=False))
+                    # Показываем список с нумерацией
+                    print("\nДоступные группы терминалов:")
+                    for i, tg in enumerate(terminal_groups, 1):
+                        print(f"{i}) ID: {tg['id']}, Название: {tg['name']}")
                     
-                    # Предлагаем выбрать группу терминалов
-                    if len(terminal_groups) == 1:
-                        self.terminal_group_id = terminal_groups[0]["id"]
-                        self._print_status(f"TerminalGroupID автоматически установлен: {self.terminal_group_id}", "success")
+                    choice = input("\nВыберите номер группы терминалов: ").strip()
+                    if choice.isdigit() and 1 <= int(choice) <= len(terminal_groups):
+                        self.terminal_group_id = terminal_groups[int(choice)-1]["id"]
+                        self._print_status(f"TerminalGroupID установлен: {self.terminal_group_id}", "success")
                     else:
-                        print("\nДоступные группы терминалов:")
-                        for i, tg in enumerate(terminal_groups, 1):
-                            print(f"{i}) ID: {tg['id']}, Название: {tg['name']}")
-                        
-                        choice = input("\nВыберите номер группы терминалов (или Enter чтобы пропустить): ").strip()
-                        if choice.isdigit() and 1 <= int(choice) <= len(terminal_groups):
-                            self.terminal_group_id = terminal_groups[int(choice)-1]["id"]
-                            self._print_status(f"TerminalGroupID установлен: {self.terminal_group_id}", "success")
+                        self._print_status("Неверный выбор! TerminalGroupID не установлен.", "error")
                 else:
                     self._print_status("Группы терминалов не найдены", "warning")
                     
@@ -242,7 +238,7 @@ class IikoAPIClient:
     
     def get_payment_types_and_programs(self):
         """Получение типов оплаты и программ лояльности"""
-        self._print_status("=== Получение типов оплаты ===", "warning")
+        self._print_status("=== Получение PayProgramId и PaymentTypeId ===", "warning")
         
         if not self.token:
             self._print_status("Ошибка: Токен не получен. Сначала получите токен.", "error")
@@ -264,23 +260,23 @@ class IikoAPIClient:
                 }
                 result.append(payment_info)
             
-            print(json.dumps(result, indent=2, ensure_ascii=False))
-            
-            # Предлагаем выбрать тип оплаты
+            # Показываем список с нумерацией
             print("\nДоступные типы оплаты:")
             for i, pt in enumerate(result, 1):
                 print(f"{i}) ID: {pt['id']}, Название: {pt['name']}, Тип: {pt.get('paymentTypeKind', 'N/A')}")
             
-            choice = input("\nВыберите номер типа оплаты (или Enter чтобы пропустить): ").strip()
+            choice = input("\nВыберите номер типа оплаты: ").strip()
             if choice.isdigit() and 1 <= int(choice) <= len(result):
                 self.payment_type_id = result[int(choice)-1]["id"]
                 self._print_status(f"PaymentTypeId установлен: {self.payment_type_id}", "success")
+            else:
+                self._print_status("Неверный выбор! PaymentTypeId не установлен.", "error")
         else:
             self._print_status("Ошибка получения типов оплаты", "error")
     
     def get_external_menus(self):
         """Получение внешнего ID меню Iiko Web"""
-        self._print_status("=== Получение внешнего ID меню Iiko Web ===", "warning")
+        self._print_status("=== Получение External ID IikoWeb menu ===", "warning")
         
         if not self.token:
             self._print_status("Ошибка: Токен не получен. Сначала получите токен.", "error")
@@ -311,7 +307,7 @@ class IikoAPIClient:
     
     def get_menu_by_id(self):
         """Получение меню по внешнему ID"""
-        self._print_status("=== Получение меню по внешнему ID ===", "warning")
+        self._print_status("=== Получение меню из IikoWeb по внешнему ID ===", "warning")
         
         if not self.token:
             self._print_status("Ошибка: Токен не получен. Сначала получите токен.", "error")
@@ -376,7 +372,7 @@ class IikoAPIClient:
     
     def get_wallet_id(self):
         """Получение Wallet ID"""
-        self._print_status("=== Получение Wallet ID ===", "warning")
+        self._print_status("=== Получение WalletId ===", "warning")
         
         if not self.token:
             self._print_status("Ошибка: Токен не получен. Сначала получите токен.", "error")
@@ -408,43 +404,53 @@ class IikoAPIClient:
         """Отображение текущего статуса"""
         self._print_status("=== Текущий статус ===", "warning")
         
+        # Token
         if not self.token:
-            self._print_status("Token: не получен", "error")
+            self._print_status("1) Token: не получен", "error")
         else:
-            self._print_status(f"Token: получен", "success")
+            self._print_status(f"1) Token: получен", "success")
         
-        if self.api_key:
-            self._print_status(f"TransportApiKey: {self.api_key}", "highlight")
+        # TransportApiKey
+        if not self.api_key:
+            self._print_status("1) TransportApiKey: не установлен", "error")
+        else:
+            self._print_status(f"1) TransportApiKey: {self.api_key}", "highlight")
         
+        # TransportOrganizationId
         if not self.org_id:
-            self._print_status("TransportOrganizationId: не установлен", "error")
+            self._print_status("2) TransportOrganizationId: не установлен", "error")
         else:
-            self._print_status(f"TransportOrganizationId: {self.org_id}", "highlight")
+            self._print_status(f"2) TransportOrganizationId: {self.org_id}", "highlight")
         
+        # TerminalGroupID
         if not self.terminal_group_id:
-            self._print_status("TerminalGroupID: не установлена", "error")
+            self._print_status("3) TerminalGroupID: не установлен", "error")
         else:
-            self._print_status(f"TerminalGroupID: {self.terminal_group_id}", "highlight")
+            self._print_status(f"3) TerminalGroupID: {self.terminal_group_id}", "highlight")
         
+        # External ID IikoWeb menu
         if not self.external_menu_id:
-            self._print_status("External ID IikoWeb menu: не установлен", "error")
+            self._print_status("4) External ID IikoWeb menu: не установлен", "error")
         else:
-            self._print_status(f"External ID IikoWeb menu: {self.external_menu_id}", "highlight")
+            self._print_status(f"4) External ID IikoWeb menu: {self.external_menu_id}", "highlight")
         
+        # PayProgramId
         if not self.pay_program_id:
-            self._print_status("PayProgramId: не установлена", "error")
+            self._print_status("5) PayProgramId: не установлен", "error")
         else:
-            self._print_status(f"PayProgramId: {self.pay_program_id}", "highlight")
+            self._print_status(f"5) PayProgramId: {self.pay_program_id}", "highlight")
         
+        # PaymentTypeId
         if not self.payment_type_id:
-            self._print_status("PaymentTypeId: не установлена", "error")
+            self._print_status("5) PaymentTypeId: не установлен", "error")
         else:
-            self._print_status(f"PaymentTypeId: {self.payment_type_id}", "highlight")
+            self._print_status(f"5) PaymentTypeId: {self.payment_type_id}", "highlight")
         
+        # WalletId
         if not self.wallet_id:
-            self._print_status("WalletId: не установлена", "error")
+            self._print_status("6) WalletId: не установлен", "error")
         else:
-            self._print_status(f"WalletId: {self.wallet_id}", "highlight")
+            self._print_status(f"6) WalletId: {self.wallet_id}", "highlight")
     
     def clear_screen(self):
         """Очистка экрана"""
@@ -460,7 +466,7 @@ class IikoAPIClient:
         self.show_status()
         print("")
         self._print_status("Доступные операции:", "warning")
-        print("1) Получить токен авторизации")
+        print("1) Получить токен авторизации по ApiKey")
         print("2) Получить TransportOrganizationId")
         print("3) Получить TerminalGroupID")
         print("4) Получить External ID IikoWeb menu")
