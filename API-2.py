@@ -431,7 +431,7 @@ class IikoAPIClient:
             self._print_status("Ошибка получения номенклатуры", "error")
     
     def get_wallet_id(self):
-        """Получение Wallet ID"""
+        """Получение Wallet ID через информацию о клиенте"""
         self._print_status("=== Получение WalletId ===", "warning")
         
         if not self.token:
@@ -441,44 +441,49 @@ class IikoAPIClient:
         if not self._get_org_id():
             return
         
-        # Запрос для получения Wallet ID
-        data = {"organizationIds": [self.org_id]}
-        response = self._make_request("POST", "/api/1/wallets", data)
+        phone = input("Введите номер телефона (формат +78000000000): ").strip()
+        if not phone:
+            self._print_status("Номер телефона не может быть пустым!", "error")
+            return
+        
+        self._print_status("Получение информации о клиенте...", "info")
+        data = {
+            "phone": phone,
+            "type": "phone",
+            "organizationId": self.org_id
+        }
+        
+        response = self._make_request("POST", "/api/1/loyalty/iiko/customer/info", data)
         
         if response:
-            # Выводим список кошельков
-            if isinstance(response, dict) and "wallets" in response:
+            # Выводим полный ответ для ознакомления
+            print(json.dumps(response, indent=2, ensure_ascii=False))
+            print("")
+            
+            # Ищем walletId в ответе
+            wallet_id = None
+            if "walletId" in response:
+                wallet_id = response["walletId"]
+            elif "wallets" in response and response["wallets"]:
+                # Если есть список кошельков, берем первый
                 wallets = response["wallets"]
-                if wallets:
-                    print("\nСписок доступных кошельков:")
-                    for wallet in wallets:
-                        print(f"  ID: {wallet.get('id')} - {wallet.get('name', 'Без названия')}")
-                    print("")
-                    
-                    wallet_id = input("Введите ID кошелька: ").strip()
-                    if wallet_id:
-                        found = False
-                        for wallet in wallets:
-                            if wallet.get("id") == wallet_id:
-                                self.wallet_id = wallet_id
-                                self._print_status(f"WalletId установлен: {self.wallet_id}", "success")
-                                found = True
-                                break
-                        if not found:
-                            self._print_status("ID не найден в списке! WalletId не установлен.", "error")
-                    else:
-                        self._print_status("ID не введен! WalletId не установлен.", "error")
-                else:
-                    self._print_status("Кошельки не найдены", "warning")
+                if wallets and len(wallets) > 0:
+                    wallet_id = wallets[0].get("id")
+            
+            if wallet_id:
+                self.wallet_id = wallet_id
+                self._print_status(f"WalletId установлен: {self.wallet_id}", "success")
             else:
-                # Если структура другая, выводим весь ответ
-                print(json.dumps(response, indent=2, ensure_ascii=False))
-                wallet_id = input("\nВведите Wallet ID вручную: ").strip()
+                # Если walletId не найден, предлагаем ввести вручную
+                self._print_status("WalletId не найден в ответе API", "warning")
+                wallet_id = input("Введите Wallet ID вручную: ").strip()
                 if wallet_id:
                     self.wallet_id = wallet_id
                     self._print_status(f"WalletId установлен: {self.wallet_id}", "success")
+                else:
+                    self._print_status("WalletId не установлен.", "error")
         else:
-            self._print_status("Ошибка получения кошельков", "error")
+            self._print_status("Ошибка получения информации о клиенте", "error")
     
     def reset_org_id(self):
         """Сброс всех ID"""
