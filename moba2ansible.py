@@ -314,7 +314,7 @@ class KioskManager:
     def view_files(self):
         """Просмотр директории"""
         if not self.ini_file or not self.target_host:
-            print("[ERROR] Не выбрана точка!)
+            print("[ERROR] Не выбрана точка!")
             return
         
         print("=" * 60)
