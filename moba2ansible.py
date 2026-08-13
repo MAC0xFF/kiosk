@@ -580,6 +580,13 @@ curl -sw "HTTP: %{http_code}\\n" localhost:10000 2>/dev/null | grep -E 'Current 
             input("\nНажмите Enter для продолжения...")
 
 def main():
+    # Очищаем терминал при старте
+    os.system('clear')
+    print("=" * 60)
+    print("              ЗАПУСК УПРАВЛЕНИЯ КИОСКАМИ")
+    print("=" * 60)
+    print()
+    
     manager = KioskManager()
     
     # Очищаем переменные окружения, мешающие SSH
