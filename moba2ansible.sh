@@ -164,8 +164,7 @@ run_ansible() {
     local total_hosts=0
     local success_hosts=0
     local unreachable_hosts=0
-    local current_host=""
-    local host_status=""
+    local first_host=true
     
     # Обрабатываем вывод построчно
     while IFS= read -r line; do
@@ -182,6 +181,12 @@ run_ansible() {
                 host_name="$ip"
             fi
             
+            # Добавляем разделитель между хостами
+            if [ "$first_host" = false ]; then
+                echo "============================================================"
+            fi
+            first_host=false
+            
             # Увеличиваем счетчики
             ((total_hosts++))
             if [ "$status" = "SUCCESS" ]; then
@@ -189,7 +194,7 @@ run_ansible() {
                 echo -e "${GREEN}$ip ($host_name) | SUCCESS${NC}"
             else
                 ((unreachable_hosts++))
-                echo -e "${RED}$ip ($host_name) | UNREACHABLE${NC}"
+                echo -e "${RED}$ip ($host_name) | UNREACHABLE!${NC}"
             fi
         fi
     done < "$temp_file"
@@ -198,22 +203,14 @@ run_ansible() {
     rm -f "$temp_file"
     
     # Показываем статистику
-    echo ""
-    echo "============================================================"
     if [ $total_hosts -gt 0 ]; then
+        echo ""
+        echo "============================================================"
         echo -e "${BLUE}СТАТИСТИКА:${NC}"
-        echo -e "  ${GREEN}Доступно: $success_hosts${NC}"
+        echo -e "  ${GREEN}Доступно: $success_hosts из $total_hosts хостов${NC}"
         echo -e "  ${RED}Недоступно: $unreachable_hosts${NC}"
-        echo -e "  ${YELLOW}Всего: $total_hosts${NC}"
-        if [ $success_hosts -eq $total_hosts ]; then
-            echo -e "${GREEN}✅ Все хосты доступны!${NC}"
-        elif [ $success_hosts -eq 0 ]; then
-            echo -e "${RED}❌ Все хосты недоступны!${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Доступно $success_hosts из $total_hosts хостов${NC}"
-        fi
+        echo "============================================================"
     fi
-    echo "============================================================"
 }
 
 #==================================================================
