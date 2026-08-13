@@ -8,7 +8,7 @@ from collections import defaultdict
 
 class KioskManager:
     def __init__(self):
-        self.ini_file = None
+        self.ini_file = "inventory.ini"
         self.target_host = None
         self.groups = []
         self.group_hosts = {}
@@ -16,14 +16,6 @@ class KioskManager:
         self.tree = {}
         self.flat_groups = []
         
-    def find_ini_files(self):
-        """Находит все .ini файлы в текущей директории"""
-        files = []
-        for f in os.listdir('.'):
-            if f.endswith('.ini') and os.path.isfile(f):
-                files.append(f)
-        return sorted(files)
-    
     def parse_ini_with_hierarchy(self, filepath):
         """Парсит INI файл с сохранением иерархии и именами хостов"""
         if not os.path.exists(filepath):
@@ -86,14 +78,12 @@ class KioskManager:
                                     groups[current_group].append(ip)
                                 
                                 # Ищем имя хоста в комментарии или после IP
-                                # Форматы: "10.10.3.99 # HostName" или "10.10.3.99 HostName"
                                 name_match = re.search(r'^\d+\.\d+\.\d+\.\d+\s*#?\s*(.+?)(?:\s*#|$)', host_line)
                                 if name_match:
                                     host_name = name_match.group(1).strip()
                                     if host_name and host_name not in ['', 'ansible', 'ssh']:
                                         self.host_names[ip] = host_name
                                 else:
-                                    # Если имя не найдено, используем IP как имя
                                     if ip not in self.host_names:
                                         self.host_names[ip] = ip
                         i += 1
@@ -108,7 +98,6 @@ class KioskManager:
         # Строим дерево
         tree = {}
         for group in groups.keys():
-            # Находим корневые группы (у которых нет родителей)
             is_child = False
             for parent, child_list in children.items():
                 if group in child_list:
@@ -139,7 +128,6 @@ class KioskManager:
             host_count = len(data.get('hosts', []))
             child_count = len(data.get('children', {}))
             
-            # Считаем общее количество хостов в поддереве
             total_hosts = host_count
             for child in data.get('children', {}).values():
                 total_hosts += self._count_hosts(child)
@@ -166,100 +154,10 @@ class KioskManager:
             count += self._count_hosts(child)
         return count
     
-    def select_ini_file(self):
-        """Выбор INI файла"""
-        files = self.find_ini_files()
-        
-        if not files:
-            print("[ERROR] Нет .ini файлов в текущей директории!")
-            return False
-        
-        print("=" * 60)
-        print("                   ВЫБЕРИ INI ФАЙЛ")
-        print("=" * 60)
-        
-        for i, f in enumerate(files, 1):
-            tree, groups = self.parse_ini_with_hierarchy(f)
-            if tree:
-                total_hosts = sum(len(h) for h in groups.values()) if groups else 0
-                group_count = len(groups) if groups else 0
-                print(f"  {i:2}) {f:<30} (групп: {group_count:3}, хостов: {total_hosts:4})")
-            else:
-                print(f"  {i:2}) {f:<30} (ошибка парсинга)")
-        
-        print("=" * 60)
-        print("  0) Выход")
-        print("=" * 60)
-        
-        try:
-            choice = input("Введите номер (0-{}): ".format(len(files)))
-            if not choice:
-                return False
-            
-            choice = int(choice)
-            if choice == 0:
-                sys.exit(0)
-            elif 1 <= choice <= len(files):
-                self.ini_file = files[choice - 1]
-                return True
-            else:
-                print("[ERROR] Неверный выбор!")
-                return False
-        except ValueError:
-            print("[ERROR] Введите число!")
-            return False
-    
-    def print_tree(self, tree, prefix='', is_last=True):
-        """Выводит дерево с отступами"""
-        lines = []
-        items = list(tree.items())
-        for i, (name, data) in enumerate(items):
-            is_last_item = (i == len(items) - 1)
-            
-            # Определяем тип
-            host_count = len(data.get('hosts', []))
-            child_count = len(data.get('children', {}))
-            total_hosts = self._count_hosts(data)
-            
-            if child_count > 0:
-                icon = '[DIR]'
-            else:
-                icon = '[HOST]'
-            
-            # Формируем строку
-            if is_last_item:
-                line = f"{prefix}└── {icon} {name}"
-                new_prefix = prefix + "    "
-            else:
-                line = f"{prefix}├── {icon} {name}"
-                new_prefix = prefix + "│   "
-            
-            # Добавляем информацию о хостах
-            if host_count > 0:
-                # Показываем первые несколько хостов с именами
-                hosts_info = []
-                for ip in data.get('hosts', [])[:3]:
-                    host_name = self.host_names.get(ip, ip)
-                    hosts_info.append(f"{ip} ({host_name})")
-                hosts_str = ', '.join(hosts_info)
-                if len(data.get('hosts', [])) > 3:
-                    hosts_str += f", ... и еще {len(data.get('hosts', [])) - 3}"
-                line += f" ({host_count} hosts: {hosts_str})"
-            elif child_count > 0 and total_hosts > 0:
-                line += f" (total {total_hosts} hosts)"
-            
-            lines.append(line)
-            
-            # Рекурсивно выводим детей
-            if data.get('children'):
-                lines.extend(self.print_tree(data['children'], new_prefix, is_last_item))
-        
-        return lines
-    
     def select_host(self):
-        """Выбор хоста/группы с иерархическим отображением"""
-        if not self.ini_file:
-            print("[ERROR] INI файл не выбран!")
+        """Выбор хоста/группы"""
+        if not os.path.exists(self.ini_file):
+            print(f"[ERROR] Файл {self.ini_file} не найден!")
             return False
         
         tree, groups = self.parse_ini_with_hierarchy(self.ini_file)
@@ -278,24 +176,11 @@ class KioskManager:
         print("=" * 60)
         print(f"  INI файл: {self.ini_file}")
         print("=" * 60)
-        print("GROUP HIERARCHY:")
-        print("-" * 60)
-        
-        # Выводим дерево
-        tree_lines = self.print_tree(tree)
-        for line in tree_lines:
-            print(line)
-        
-        print("-" * 60)
-        print("  0) Выход")
-        print("  F) Выбрать другой INI файл")
-        print("=" * 60)
         
         # Показываем нумерованный список всех групп
         print("\nAVAILABLE GROUPS:")
         print("-" * 60)
         
-        # Сортируем по пути для сохранения иерархии
         sorted_groups = sorted(self.flat_groups, key=lambda x: x['path'])
         
         for i, g in enumerate(sorted_groups, 1):
@@ -305,16 +190,10 @@ class KioskManager:
         
         print("-" * 60)
         print("  0) Выход")
-        print("  F) Выбрать другой INI файл")
         print("=" * 60)
         
         try:
-            choice = input("Введите номер (1-{}, 0-выход, F-сменить INI): ".format(len(sorted_groups)))
-            
-            if choice.upper() == 'F':
-                if self.select_ini_file():
-                    return self.select_host()
-                return False
+            choice = input("Введите номер (1-{}, 0-выход): ".format(len(sorted_groups)))
             
             if not choice:
                 return False
@@ -333,19 +212,17 @@ class KioskManager:
                 print("[ERROR] Неверный выбор!")
                 return False
         except ValueError:
-            print("[ERROR] Введите число или F!")
+            print("[ERROR] Введите число!")
             return False
     
     def cleanup_ssh_env(self):
         """Очищает переменные окружения, мешающие SSH"""
-        # Удаляем переменные, которые могут указывать на несуществующий конфиг
         problematic_vars = ['ANSIBLE_SSH_ARGS', 'GIT_SSH_COMMAND', 'SSH_CONFIG']
         for var in problematic_vars:
             if var in os.environ:
                 print(f"[INFO] Удаляем переменную {var}={os.environ[var]}")
                 del os.environ[var]
         
-        # Также проверяем ~/.ssh/config на наличие ссылки на config_mobaxterm
         ssh_config = os.path.expanduser('~/.ssh/config')
         if os.path.exists(ssh_config):
             with open(ssh_config, 'r') as f:
@@ -356,7 +233,6 @@ class KioskManager:
                     backup = ssh_config + '.bak'
                     os.rename(ssh_config, backup)
                     print(f"[INFO] Создан бэкап: {backup}")
-                    # Создаем новый пустой конфиг
                     with open(ssh_config, 'w') as f:
                         f.write("# Clean config created by KioskManager\n")
                         f.write("Host *\n")
@@ -369,17 +245,14 @@ class KioskManager:
             print("[ERROR] Не выбрана точка!")
             return
         
-        # Формируем команду
         cmd = f"ansible -i {self.ini_file} {self.target_host} {args}"
         
         print(f"\n[RUN] Выполняю: {cmd}")
         print("-" * 60)
         
-        # Запускаем команду и захватываем вывод
         process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         output, _ = process.communicate()
         
-        # Разбиваем вывод на строки и обрабатываем
         lines = output.split('\n')
         i = 0
         host_counter = 0
@@ -387,56 +260,50 @@ class KioskManager:
         while i < len(lines):
             line = lines[i]
             
-            # Проверяем, является ли строка началом блока хоста
-            # Ищем IP адрес в строке
             ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
             if ip_match:
                 host_counter += 1
                 ip = ip_match.group(1)
                 host_name = self.host_names.get(ip, ip)
                 
-                # Заменяем IP на IP (HostName) в строке с результатом
                 if host_name != ip:
                     line = line.replace(ip, f"{ip} ({host_name})")
                 
-                # Выводим разделитель перед хостом (кроме первого)
                 if host_counter > 1:
                     print("=" * 60)
                 
-                # Выводим строку хоста
                 print(line)
                 
-                # Пропускаем следующие строки до следующего хоста или конца
                 i += 1
-                # Выводим все строки до следующего IP адреса
                 while i < len(lines):
                     next_line = lines[i]
-                    # Проверяем, не начинается ли следующая строка с IP
                     next_ip_match = re.search(r'^(\d+\.\d+\.\d+\.\d+)', next_line)
                     if next_ip_match:
-                        # Нашли следующий хост, выходим из цикла
                         break
                     
-                    # Выводим строку результата (содержимое ответа)
                     if next_line.strip():
                         print(next_line)
                     i += 1
                 
-                # Добавляем пустую строку после блока
                 print()
                 continue
             else:
-                # Если строка не содержит IP (обычно предупреждения или заголовки)
                 if line.strip():
                     print(line)
                 i += 1
         
         print("-" * 60)
     
+    #==================================================================
+    # function ping()
+    #==================================================================
     def ping(self):
         """Пинг хостов"""
         self.run_ansible("-m ping")
     
+    #==================================================================
+    # function view_files()
+    #==================================================================
     def view_files(self):
         """Просмотр директории"""
         if not self.ini_file or not self.target_host:
@@ -458,6 +325,9 @@ class KioskManager:
         
         self.run_ansible(f"-m shell -a \"ls -lth {path} 2>/dev/null || echo '[ERROR] Директория не найдена'\" --become")
     
+    #==================================================================
+    # function copy_files()
+    #==================================================================
     def copy_files(self):
         """Копирование файлов"""
         if not self.ini_file or not self.target_host:
@@ -488,6 +358,9 @@ class KioskManager:
         
         self.run_ansible(f"-m copy -a \"src={source} dest={dest}\" --become")
     
+    #==================================================================
+    # function delete_files()
+    #==================================================================
     def delete_files(self):
         """Удаление файлов"""
         if not self.ini_file or not self.target_host:
@@ -535,6 +408,9 @@ class KioskManager:
         else:
             print("[ERROR] Неверный выбор!")
     
+    #==================================================================
+    # function view_config()
+    #==================================================================
     def view_config(self):
         """Просмотр конфига"""
         if not self.ini_file or not self.target_host:
@@ -562,6 +438,9 @@ class KioskManager:
         elif choice == '3':
             self.edit_config()
     
+    #==================================================================
+    # function edit_config()
+    #==================================================================
     def edit_config(self):
         """Изменение параметров в конфиге"""
         if not self.ini_file or not self.target_host:
@@ -581,7 +460,6 @@ class KioskManager:
             print("[CANCEL] Отменено")
             return
         
-        # Разбираем ввод
         if '=' not in param_input:
             print("[ERROR] Неверный формат! Используйте: параметр=значение")
             return
@@ -594,7 +472,6 @@ class KioskManager:
             print("[ERROR] Параметр и значение не могут быть пустыми!")
             return
         
-        # Подтверждение
         print("\n" + "=" * 60)
         print(f"Будет изменен параметр: {param}={value}")
         print("=" * 60)
@@ -603,11 +480,13 @@ class KioskManager:
             print("[CANCEL] Отменено")
             return
         
-        # Используем sed для замены
         cmd = f"grep -q '^{param}=' /etc/sst-iiko/settings.ini && sed -i 's/^{param}=.*/{param}={value}/' /etc/sst-iiko/settings.ini || echo '{param}={value}' >> /etc/sst-iiko/settings.ini && echo '[OK] {param}={value}'"
         
         self.run_ansible(f"-m shell -a \"{cmd}\" --become")
     
+    #==================================================================
+    # function restart_sst()
+    #==================================================================
     def restart_sst(self):
         """Перезапуск SST"""
         if not self.ini_file or not self.target_host:
@@ -623,25 +502,31 @@ class KioskManager:
             print("[CANCEL] Отменено")
             return
         
-        # Используем простую однострочную команду
         cmd = "if systemctl is-enabled sst-iiko 2>/dev/null | grep -q enabled; then sudo systemctl restart sst-iiko && echo '[OK] sst-iiko restarted'; elif systemctl is-enabled xsst-iiko 2>/dev/null | grep -q enabled; then sudo systemctl restart xsst-iiko && echo '[OK] xsst-iiko restarted'; else echo '[ERROR] SST service not found'; fi"
         
         self.run_ansible(f"-m shell -a \"{cmd}\" --become")
     
+    #==================================================================
+    # function status_sst()
+    #==================================================================
     def status_sst(self):
-        """Статус SST"""
+        """Статус SST - только важная информация"""
         if not self.ini_file or not self.target_host:
             print("[ERROR] Не выбрана точка!")
             return
         
-        # Проверка статуса сервиса - однострочная команда
-        cmd1 = "echo '=== SERVICE STATUS ===' && systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Loaded|Active|Main PID' || echo '[ERROR] Services not found'"
-        self.run_ansible(f"-m shell -a \"{cmd1}\" --become")
-        
-        # Проверка порта - однострочная команда
-        cmd2 = "echo '' && echo '=== SST API STATUS ===' && curl -sw 'HTTP Code: %{http_code}\\n' localhost:10000 2>/dev/null || echo '[ERROR] Port 10000 unavailable'"
-        self.run_ansible(f"-m shell -a \"{cmd2}\" --become")
+        cmd = """
+echo "=== SST STATUS ===" && \
+systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Active:' || echo '[ERROR] Services not found' && \
+echo "" && \
+echo "=== API INFO ===" && \
+curl -sw "HTTP: %{http_code}\\n" localhost:10000 2>/dev/null | grep -E 'Current state|Hardware|Fiscal|Network|Terminal|deviceName|Theme|Version|HTTP:' || echo '[ERROR] Port 10000 unavailable'
+"""
+        self.run_ansible(f"-m shell -a \"{cmd}\" --become")
     
+    #==================================================================
+    # function main_menu()
+    #==================================================================
     def main_menu(self):
         """Главное меню"""
         while True:
@@ -649,10 +534,9 @@ class KioskManager:
             print("=" * 60)
             print("              УПРАВЛЕНИЕ КИОСКАМИ")
             print("=" * 60)
-            print(f"  INI файл: {self.ini_file if self.ini_file else 'не выбран'}")
+            print(f"  INI файл: {self.ini_file}")
             print(f"  Точка:    {self.target_host if self.target_host else 'не выбрана'}")
             if self.target_host:
-                # Показываем количество хостов в выбранной группе
                 for g in self.flat_groups:
                     if g['name'] == self.target_host:
                         print(f"  Хостов:   {g['total_hosts']}")
@@ -666,11 +550,10 @@ class KioskManager:
             print("  6) RESTART SST (ОСТОРОЖНО!)")
             print("  7) Статус SST")
             print("  8) Сменить точку")
-            print("  I) Сменить INI файл")
             print("  0) Выход")
             print("=" * 60)
             
-            choice = input("Введите номер (0-8, I): ")
+            choice = input("Введите номер (0-8): ")
             
             if choice == '0':
                 print("Выход...")
@@ -691,9 +574,6 @@ class KioskManager:
                 self.status_sst()
             elif choice == '8':
                 self.select_host()
-            elif choice.upper() == 'I':
-                if self.select_ini_file():
-                    self.select_host()
             else:
                 print("[ERROR] Неверный выбор!")
             
@@ -705,9 +585,9 @@ def main():
     # Очищаем переменные окружения, мешающие SSH
     manager.cleanup_ssh_env()
     
-    # Выбор INI файла
-    if not manager.select_ini_file():
-        print("[ERROR] Не удалось выбрать INI файл!")
+    # Проверяем наличие inventory.ini
+    if not os.path.exists("inventory.ini"):
+        print("[ERROR] Файл inventory.ini не найден!")
         sys.exit(1)
     
     # Выбор хоста/группы
