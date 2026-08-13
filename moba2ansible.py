@@ -360,7 +360,7 @@ class KioskManager:
                 failed_hosts.append(ip)
             
             # Выводим результат
-            print("=" * 60)
+            print("-" * 60)
             print(f"{ip} ({host_name}) | {status}")
         
         # Выводим статистику
