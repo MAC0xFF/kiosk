@@ -527,15 +527,19 @@ class KioskManager:
             print("[ERROR] Не выбрана точка!")
             return
         
-        # Используем многострочную команду с правильным экранированием
-        cmd = '''
-echo "=== SST STATUS ==="
-echo "    sst-iiko - $(systemctl status sst-iiko 2>/dev/null | grep -E 'Active:' | sed 's/^.*Active: //')"
-echo "    xsst-iiko - $(systemctl status xsst-iiko 2>/dev/null | grep -E 'Active:' | sed 's/^.*Active: //')"
-echo ""
-echo "=== API INFO ==="
-curl -sw "HTTP: %{http_code}\\n" localhost:10000 2>/dev/null | grep -E "Current state|Hardware|Fiscal|Network|Terminal|deviceName|Theme|Version|HTTP:" || echo "[ERROR] Port 10000 unavailable"
-'''
+        # Разбиваем на отдельные команды
+        cmd_parts = [
+            "echo '=== SST STATUS ==='",
+            "sst_status=$(systemctl status sst-iiko 2>/dev/null | grep -E 'Active:' | sed 's/^.*Active: //')",
+            "xsst_status=$(systemctl status xsst-iiko 2>/dev/null | grep -E 'Active:' | sed 's/^.*Active: //')",
+            "echo \"    sst-iiko - $sst_status\"",
+            "echo \"    xsst-iiko - $xsst_status\"",
+            "echo ''",
+            "echo '=== API INFO ==='",
+            "curl -sw 'HTTP: %{http_code}\\n' localhost:10000 2>/dev/null | grep -E 'Current state|Hardware|Fiscal|Network|Terminal|deviceName|Theme|Version|HTTP:' || echo '[ERROR] Port 10000 unavailable'"
+        ]
+        
+        cmd = " && ".join(cmd_parts)
         self.run_ansible(f"-m shell -a \"{cmd}\" --become")
     
     #==================================================================
