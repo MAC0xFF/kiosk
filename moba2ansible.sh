@@ -49,7 +49,7 @@ parse_ini() {
     fi
     
     # Извлекаем все группы (секции без :children)
-    GROUPS=$(grep -E '^\[.*\]$' "$INI_FILE" | grep -v ':children' | sed 's/\[//g' | sed 's/\]//g' | grep -v 'all:vars' | grep -v 'all_hosts')
+    GROUPS=$(grep '^\[.*\]$' "$INI_FILE" | grep -v ':children' | grep -v 'all:vars' | grep -v 'all_hosts' | sed 's/\[//g' | sed 's/\]//g')
     
     if [ -z "$GROUPS" ]; then
         echo -e "${RED}[ERROR] Не найдено групп в $INI_FILE${NC}"
@@ -157,7 +157,7 @@ run_ansible() {
             local ip="${BASH_REMATCH[1]}"
             local status="${BASH_REMATCH[2]}"
             
-            # Извлекаем имя хоста из строки (между скобками)
+            # Извлекаем имя хоста из строки
             local host_name=$(echo "$line" | awk -F'[()]' '{print $2}')
             if [ -z "$host_name" ]; then
                 host_name="$ip"
