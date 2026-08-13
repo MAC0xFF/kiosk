@@ -105,7 +105,7 @@ class IikoAPIClient:
                 return False
         return True
     
-    def _color_value(self, value, default="не установлен"):
+    def _color_value(self, value, default="не установлено"):
         """Форматирование значения с цветом"""
         if value:
             return f"\033[0;32m{value}\033[0m"  # GREEN
@@ -283,7 +283,6 @@ class IikoAPIClient:
             
             # Сначала запрашиваем PayProgramId
             print("Выберите программу лояльности (applicableMarketingCampaigns):")
-            print("Доступные программы:")
             
             # Собираем все уникальные программы лояльности
             campaigns = {}
@@ -301,13 +300,16 @@ class IikoAPIClient:
                     print(f"  {i}) ID: {campaign} (используется в: {payment_names})")
                 print("")
                 
-                campaign_choice = input("Введите ID программы лояльности (или Enter чтобы пропустить): ").strip()
+                print("Введите PayProgramId (applicableMarketingCampaigns):")
+                campaign_choice = input("> ").strip()
                 if campaign_choice:
                     if campaign_choice in campaigns:
                         self.pay_program_id = campaign_choice
                         self._print_status(f"PayProgramId установлен: {self.pay_program_id}", "success")
                     else:
                         self._print_status("ID не найден в списке! PayProgramId не установлен.", "error")
+                else:
+                    self._print_status("ID не введен! PayProgramId не установлен.", "error")
             else:
                 self._print_status("Программы лояльности не найдены", "warning")
             
@@ -318,14 +320,22 @@ class IikoAPIClient:
                 print(f"  {i}) ID: {pt['id']} - {pt['name']} ({pt.get('paymentTypeKind', 'N/A')})")
             print("")
             
-            pt_choice = input("Введите номер типа оплаты (или Enter чтобы пропустить): ").strip()
-            if pt_choice.isdigit() and 1 <= int(pt_choice) <= len(response["paymentTypes"]):
-                selected_pt = response["paymentTypes"][int(pt_choice)-1]
-                self.payment_type_id = selected_pt["id"]
-                self.payment_type_name = selected_pt["name"]
-                self._print_status(f"PaymentTypeId установлен: {self.payment_type_id} - {self.payment_type_name}", "success")
+            print("Введите PaymentTypeId (id):")
+            pt_choice = input("> ").strip()
+            if pt_choice:
+                # Проверяем, есть ли такой ID в списке
+                found = False
+                for pt in response["paymentTypes"]:
+                    if pt["id"] == pt_choice:
+                        self.payment_type_id = pt_choice
+                        self.payment_type_name = pt["name"]
+                        self._print_status(f"PaymentTypeId установлен: {self.payment_type_id} - {self.payment_type_name}", "success")
+                        found = True
+                        break
+                if not found:
+                    self._print_status("ID не найден в списке! PaymentTypeId не установлен.", "error")
             else:
-                self._print_status("Неверный выбор! PaymentTypeId не установлен.", "error")
+                self._print_status("ID не введен! PaymentTypeId не установлен.", "error")
         else:
             self._print_status("Ошибка получения типов оплаты", "error")
     
