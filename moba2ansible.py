@@ -513,16 +513,9 @@ class KioskManager:
         print("\nПерезапуск SST...")
         print("-" * 60)
         
-        # Перезапускаем активный сервис
-        cmd = """
-if systemctl status sst-iiko 2>/dev/null | grep -q "Active: active"; then
-    sudo systemctl restart sst-iiko && echo "[OK] sst-iiko restarted"
-elif systemctl status xsst-iiko 2>/dev/null | grep -q "Active: active"; then
-    sudo systemctl restart xsst-iiko && echo "[OK] xsst-iiko restarted"
-else
-    echo "[WARN] No active SST service found"
-fi
-"""
+        # Перезапускаем активный сервис - используем однострочную команду
+        cmd = "if systemctl status sst-iiko 2>/dev/null | grep -q 'Active: active'; then sudo systemctl restart sst-iiko && echo '[OK] sst-iiko restarted'; elif systemctl status xsst-iiko 2>/dev/null | grep -q 'Active: active'; then sudo systemctl restart xsst-iiko && echo '[OK] xsst-iiko restarted'; else echo '[WARN] No active SST service found'; fi"
+        
         self.run_ansible(f"-m shell -a \"{cmd}\" --become")
     
     #==================================================================
