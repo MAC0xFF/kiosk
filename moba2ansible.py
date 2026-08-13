@@ -523,7 +523,7 @@ class KioskManager:
             return
         
         # Используем команду в одинарных кавычках, чтобы избежать проблем с парсингом
-        cmd = 'echo "=== SST STATUS ===" && systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E "Active:" || echo "[ERROR] Services not found" && echo "" && echo "=== API INFO ===" && curl -sw "HTTP: %{http_code}\\n" localhost:10000 2>/dev/null | grep -E "Current state|Hardware|Fiscal|Network|Terminal|deviceName|Theme|Version|HTTP:" || echo "[ERROR] Port 10000 unavailable"'
+        cmd = 'echo "=== SST STATUS ===" && echo "    sst-iiko - $(systemctl status sst-iiko 2>/dev/null | grep -E \"Active:\" | sed \"s/.*Active: //\")" && echo "    xsst-iiko - $(systemctl status xsst-iiko 2>/dev/null | grep -E \"Active:\" | sed \"s/.*Active: //\")" && echo "" && echo "=== API INFO ===" && curl -sw "HTTP: %{http_code}\\n" localhost:10000 2>/dev/null | grep -E "Current state|Hardware|Fiscal|Network|Terminal|deviceName|Theme|Version|HTTP:" || echo "[ERROR] Port 10000 unavailable"'
         
         self.run_ansible(f"-m shell -a '{cmd}' --become")
     
