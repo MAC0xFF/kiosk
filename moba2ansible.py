@@ -375,22 +375,55 @@ class KioskManager:
         print(f"\n[RUN] Выполняю: {cmd}")
         print("-" * 60)
         
-        # Запускаем команду и捕获 вывод
+        # Запускаем команду и захватываем вывод
         process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         output, _ = process.communicate()
         
-        # Обрабатываем вывод, добавляя имена хостов
+        # Разбиваем вывод на строки и обрабатываем
         lines = output.split('\n')
-        for line in lines:
-            # Ищем строки с IP адресами
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            # Проверяем, является ли строка началом блока хоста
+            # Ищем IP адрес в строке
             ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
             if ip_match:
                 ip = ip_match.group(1)
                 host_name = self.host_names.get(ip, ip)
-                # Заменяем IP на IP (HostName) в выводе
+                
+                # Заменяем IP на IP (HostName) в строке с результатом
                 if host_name != ip:
                     line = line.replace(ip, f"{ip} ({host_name})")
-            print(line)
+                
+                # Выводим строку хоста
+                print(line)
+                
+                # Пропускаем следующие строки до следующего хоста или конца
+                i += 1
+                # Выводим все строки до следующего IP адреса
+                while i < len(lines):
+                    next_line = lines[i]
+                    # Проверяем, не начинается ли следующая строка с IP
+                    next_ip_match = re.search(r'^(\d+\.\d+\.\d+\.\d+)', next_line)
+                    if next_ip_match:
+                        # Нашли следующий хост, выходим из цикла
+                        break
+                    
+                    # Выводим строку результата (содержимое ответа)
+                    if next_line.strip():
+                        print(next_line)
+                    i += 1
+                
+                # Добавляем пустую строку между хостами
+                if i < len(lines):
+                    print()  # Пустая строка
+                continue
+            else:
+                # Если строка не содержит IP (обычно предупреждения или заголовки)
+                if line.strip():
+                    print(line)
+                i += 1
         
         print("-" * 60)
     
