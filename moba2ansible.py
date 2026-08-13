@@ -325,53 +325,37 @@ def ping(self):
     print(f"ПИНГ ХОСТОВ: {self.target_host}")
     print("=" * 60)
     
-    # Запускаем ansible для всех хостов сразу
-    hosts_str = ",".join(hosts)
-    cmd = f"ansible -i {self.ini_file} {hosts_str} -m ping 2>/dev/null"
-    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    output, error = process.communicate()
-    
-    # Парсим вывод
-    lines = output.split('\n')
+    # Пингуем каждый хост отдельно для получения детальной информации
     success_hosts = []
     failed_hosts = []
     
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if not line:
-            i += 1
-            continue
+    for ip in hosts:
+        # Получаем имя хоста
+        host_name = self.host_names.get(ip, ip)
         
-        # Ищем IP адрес
-        ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
-        if ip_match:
-            ip = ip_match.group(1)
-            host_name = self.host_names.get(ip, ip)
-            
-            # Определяем статус
-            if "SUCCESS" in line:
-                status = "SUCCESS"
-                success_hosts.append(ip)
-            else:
-                status = "UNREACHABLE!"
-                failed_hosts.append(ip)
-            
-            # Выводим результат
+        # Пингуем хост
+        cmd = f"ansible -i {self.ini_file} {ip} -m ping 2>/dev/null"
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        output, error = process.communicate()
+        
+        # Определяем статус
+        if "SUCCESS" in output and "pong" in output:
+            status = "SUCCESS"
+            success_hosts.append(ip)
+        elif "UNREACHABLE" in output or "Failed to connect" in output or "Connection refused" in output:
+            status = "UNREACHABLE!"
+            failed_hosts.append(ip)
+        else:
+            status = "UNKNOWN"
+            failed_hosts.append(ip)
+        
+        # Выводим результат
+        if status == "SUCCESS":
             print("=" * 60)
             print(f"{ip} ({host_name}) | {status}")
-            
-            # Пропускаем следующие строки до следующего IP
-            i += 1
-            while i < len(lines):
-                next_line = lines[i].strip()
-                if re.search(r'(\d+\.\d+\.\d+\.\d+)', next_line):
-                    break
-                if next_line and "FAILED" in next_line:
-                    print(f"  {next_line}")
-                i += 1
-            continue
-        i += 1
+        else:
+            print("=" * 60)
+            print(f"{ip} ({host_name}) | {status}")
     
     # Выводим статистику
     total = len(hosts)
@@ -383,6 +367,10 @@ def ping(self):
     print(f"  Доступно: {success_count} из {total} хостов")
     if failed_count > 0:
         print(f"  Недоступно: {failed_count}")
+        print("\nНЕДОСТУПНЫЕ ХОСТЫ:")
+        for ip in failed_hosts:
+            host_name = self.host_names.get(ip, ip)
+            print(f"  - {ip} ({host_name})")
     print("=" * 60)
     
     #==================================================================
