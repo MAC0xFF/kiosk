@@ -301,73 +301,85 @@ class KioskManager:
         
         print("-" * 60)
     
-    #==================================================================
-    # function ping()
-    #==================================================================
-    def ping(self):
-        """Пинг хостов"""
-        if not self.ini_file or not self.target_host:
-            print("[ERROR] Не выбрана точка!")
+ #==================================================================
+# function ping()
+#==================================================================
+def ping(self):
+    """Пинг хостов"""
+    if not self.ini_file or not self.target_host:
+        print("[ERROR] Не выбрана точка!")
+        return
+    
+    # Получаем список хостов через ansible-inventory
+    cmd = f"ansible-inventory -i {self.ini_file} --list"
+    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    output, error = process.communicate()
+    
+    try:
+        import json
+        inventory = json.loads(output)
+        # Получаем хосты из группы
+        if self.target_host in inventory:
+            hosts = inventory[self.target_host]['hosts']
+        elif 'all' in inventory and 'children' in inventory['all']:
+            # Ищем группу в children
+            hosts = []
+            for child in inventory['all']['children']:
+                if child == self.target_host:
+                    hosts = inventory['all']['children'][child]['hosts']
+                    break
+        else:
+            print("[ERROR] Группа не найдена в инвентаре!")
             return
+    except:
+        print("[ERROR] Не удалось разобрать инвентарь!")
+        return
+    
+    if not hosts:
+        print("[ERROR] Нет хостов в выбранной группе!")
+        return
+    
+    print("=" * 60)
+    print(f"ПИНГ ХОСТОВ: {self.target_host} (всего: {len(hosts)})")
+    print("=" * 60)
+    
+    # Пингуем каждый хост отдельно
+    success_hosts = []
+    failed_hosts = []
+    
+    for ip in hosts:
+        host_name = self.host_names.get(ip, ip)
         
-        # Получаем список хостов в выбранной группе
-        hosts = []
-        for g in self.flat_groups:
-            if g['name'] == self.target_host:
-                hosts = g['hosts']
-                break
+        # Пингуем хост
+        ping_cmd = f"ansible -i {self.ini_file} {ip} -m ping 2>/dev/null"
+        process = subprocess.Popen(ping_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        output, error = process.communicate()
         
-        if not hosts:
-            print("[ERROR] Нет хостов в выбранной группе!")
-            return
+        if "SUCCESS" in output and "pong" in output:
+            status = "SUCCESS"
+            success_hosts.append(ip)
+        else:
+            status = "UNREACHABLE!"
+            failed_hosts.append(ip)
         
         print("=" * 60)
-        print(f"ПИНГ ХОСТОВ: {self.target_host}")
-        print("=" * 60)
-        
-        # Пингуем каждый хост отдельно для получения детальной информации
-        success_hosts = []
-        failed_hosts = []
-        
-        for ip in hosts:
-            # Получаем имя хоста
+        print(f"{ip} ({host_name}) | {status}")
+    
+    # Статистика
+    total = len(hosts)
+    success_count = len(success_hosts)
+    failed_count = len(failed_hosts)
+    
+    print("=" * 60)
+    print("СТАТИСТИКА:")
+    print(f"  Доступно: {success_count} из {total} хостов")
+    if failed_count > 0:
+        print(f"  Недоступно: {failed_count}")
+        print("\nНЕДОСТУПНЫЕ ХОСТЫ:")
+        for ip in failed_hosts:
             host_name = self.host_names.get(ip, ip)
-            
-            # Пингуем хост
-            cmd = f"ansible -i {self.ini_file} {ip} -m ping 2>/dev/null"
-            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            output, error = process.communicate()
-            
-            # Определяем статус
-            if "SUCCESS" in output and "pong" in output:
-                status = "SUCCESS"
-                success_hosts.append(ip)
-            elif "UNREACHABLE" in output or "Failed to connect" in output or "Connection refused" in output:
-                status = "UNREACHABLE!"
-                failed_hosts.append(ip)
-            else:
-                status = "UNKNOWN"
-                failed_hosts.append(ip)
-            
-            # Выводим результат
-            print("=" * 60)
-            print(f"{ip} ({host_name}) | {status}")
-        
-        # Выводим статистику
-        total = len(hosts)
-        success_count = len(success_hosts)
-        failed_count = len(failed_hosts)
-        
-        print("=" * 60)
-        print("СТАТИСТИКА:")
-        print(f"  Доступно: {success_count} из {total} хостов")
-        if failed_count > 0:
-            print(f"  Недоступно: {failed_count}")
-            print("\nНЕДОСТУПНЫЕ ХОСТЫ:")
-            for ip in failed_hosts:
-                host_name = self.host_names.get(ip, ip)
-                print(f"  - {ip} ({host_name})")
-        print("=" * 60)
+            print(f"  - {ip} ({host_name})")
+    print("=" * 60)
     
     #==================================================================
     # function view_files()
