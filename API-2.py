@@ -202,28 +202,31 @@ class IikoAPIClient:
             try:
                 # Проверяем структуру ответа
                 terminal_groups = []
+                seen_ids = set()  # Множество для отслеживания уже добавленных ID
                 
                 if "terminalGroups" in response and response["terminalGroups"]:
                     for group in response["terminalGroups"]:
                         if "items" in group:
                             for item in group["items"]:
-                                # Проверяем наличие дубликатов по ID
-                                if not any(tg["id"] == item.get("id") for tg in terminal_groups):
+                                item_id = item.get("id")
+                                if item_id and item_id not in seen_ids:
                                     terminal_groups.append({
-                                        "id": item.get("id"),
+                                        "id": item_id,
                                         "name": item.get("name")
                                     })
+                                    seen_ids.add(item_id)
                 
                 if "terminalGroupsInSleep" in response and response["terminalGroupsInSleep"]:
                     for group in response["terminalGroupsInSleep"]:
                         if "items" in group:
                             for item in group["items"]:
-                                # Проверяем наличие дубликатов по ID
-                                if not any(tg["id"] == item.get("id") for tg in terminal_groups):
+                                item_id = item.get("id")
+                                if item_id and item_id not in seen_ids:
                                     terminal_groups.append({
-                                        "id": item.get("id"),
+                                        "id": item_id,
                                         "name": item.get("name")
                                     })
+                                    seen_ids.add(item_id)
                 
                 if terminal_groups:
                     # Выводим список групп терминалов как у организаций
