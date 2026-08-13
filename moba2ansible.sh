@@ -1,389 +1,664 @@
-#!/bin/bash
-# ============================================================
-# Управление киосками через Ansible
-# ============================================================
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import os
+import sys
+import subprocess
+import re
+from collections import defaultdict
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET_INI=""
-TARGET_HOST=""
-TARGET_GROUP=""
-
-# ============================================================
-# Функция: Выбор INI файла
-# ============================================================
-select_ini_file() {
-    clear
-    echo "============================================================"
-    echo "                   ВЫБЕРИ INI ФАЙЛ"
-    echo "============================================================"
+class KioskManager:
+    def __init__(self):
+        self.ini_file = "inventory.ini"
+        self.target_host = None
+        self.groups = []
+        self.group_hosts = {}
+        self.host_names = {}  # Словарь для хранения имен хостов {ip: name}
+        self.tree = {}
+        self.flat_groups = []
+        self.ansible_path = None
+        
+    def clear_screen(self):
+        """Очищает экран терминала"""
+        if os.name == 'nt':
+            os.system('cls')
+        else:
+            os.system('clear')
     
-    # Находим все .ini файлы
-    mapfile -t ini_files < <(find . -maxdepth 1 -name "*.ini" -type f | sed 's/^\.\///' | sort)
+    def find_ansible(self):
+        """Находит путь к ansible"""
+        if self.ansible_path:
+            return self.ansible_path
+        
+        # Проверяем стандартные пути
+        possible_paths = [
+            'ansible',
+            '/usr/bin/ansible',
+            '/usr/local/bin/ansible',
+            os.path.expanduser('~/.local/bin/ansible')
+        ]
+        
+        # Проверяем, не установлен ли ansible в виртуальном окружении
+        venv_path = os.environ.get('VIRTUAL_ENV')
+        if venv_path:
+            possible_paths.insert(0, os.path.join(venv_path, 'bin/ansible'))
+        
+        # Проверяем PATH через which
+        for path in possible_paths:
+            try:
+                result = subprocess.run(['which', path], capture_output=True, text=True)
+                if result.returncode == 0:
+                    self.ansible_path = result.stdout.strip()
+                    return self.ansible_path
+            except:
+                pass
+            
+            # Проверяем напрямую
+            if os.path.exists(path) and os.access(path, os.X_OK):
+                self.ansible_path = path
+                return path
+        
+        print("[ERROR] Ansible не найден в системе!")
+        print("Проверьте, что Ansible установлен и доступен в PATH")
+        return None
+        
+    def parse_ini_with_hierarchy(self, filepath):
+        """Парсит INI файл с сохранением иерархии и именами хостов"""
+        if not os.path.exists(filepath):
+            print(f"[ERROR] Файл {filepath} не найден!")
+            return None
+        
+        groups = {}
+        children = defaultdict(list)
+        current_group = None
+        is_parent = {}
+        self.host_names = {}  # Очищаем словарь имен
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            
+            # Проверяем на секцию
+            if line.startswith('[') and line.endswith(']'):
+                section = line[1:-1]
+                
+                # Пропускаем служебные секции
+                if section in ['all:vars', 'all_hosts']:
+                    i += 1
+                    continue
+                
+                # Проверяем, является ли секция children
+                if ':children' in section:
+                    parent = section.replace(':children', '')
+                    # Читаем детей
+                    i += 1
+                    while i < len(lines):
+                        child_line = lines[i].strip()
+                        if child_line.startswith('[') and child_line.endswith(']'):
+                            break
+                        if child_line and not child_line.startswith('#'):
+                            children[parent].append(child_line)
+                        i += 1
+                    continue
+                else:
+                    current_group = section
+                    if current_group not in groups:
+                        groups[current_group] = []
+                        is_parent[current_group] = False
+                    
+                    # Читаем хосты в группе
+                    i += 1
+                    while i < len(lines):
+                        host_line = lines[i].strip()
+                        if host_line.startswith('[') and host_line.endswith(']'):
+                            break
+                        if host_line and not host_line.startswith('#'):
+                            # Ищем IP и имя хоста
+                            ip_match = re.match(r'^(\d+\.\d+\.\d+\.\d+)', host_line)
+                            if ip_match:
+                                ip = ip_match.group(1)
+                                if ip not in groups[current_group]:
+                                    groups[current_group].append(ip)
+                                
+                                # Ищем имя хоста в комментарии или после IP
+                                name_match = re.search(r'^\d+\.\d+\.\d+\.\d+\s*#?\s*(.+?)(?:\s*#|$)', host_line)
+                                if name_match:
+                                    host_name = name_match.group(1).strip()
+                                    if host_name and host_name not in ['', 'ansible', 'ssh']:
+                                        self.host_names[ip] = host_name
+                                else:
+                                    if ip not in self.host_names:
+                                        self.host_names[ip] = ip
+                        i += 1
+                    continue
+            i += 1
+        
+        # Определяем родительские группы
+        for parent in children.keys():
+            if parent in is_parent:
+                is_parent[parent] = True
+        
+        # Строим дерево
+        tree = {}
+        for group in groups.keys():
+            is_child = False
+            for parent, child_list in children.items():
+                if group in child_list:
+                    is_child = True
+                    break
+            if not is_child:
+                tree[group] = self._build_subtree(group, children, groups)
+        
+        return tree, groups
     
-    if [[ ${#ini_files[@]} -eq 0 ]]; then
-        echo "❌ Нет .ini файлов в текущей директории!"
-        sleep 3
-        return 1
-    fi
+    def _build_subtree(self, group, children, groups):
+        """Рекурсивно строит поддерево"""
+        subtree = {
+            'hosts': groups.get(group, []),
+            'children': {}
+        }
+        
+        for child in children.get(group, []):
+            subtree['children'][child] = self._build_subtree(child, children, groups)
+        
+        return subtree
     
-    local total=${#ini_files[@]}
-    for i in "${!ini_files[@]}"; do
-        local num=$((i+1))
-        local size=$(du -h "${ini_files[$i]}" 2>/dev/null | cut -f1)
-        local groups=$(grep -c "^\[[^:]" "${ini_files[$i]}" 2>/dev/null || echo "0")
-        local hosts=$(grep -c "^[0-9]" "${ini_files[$i]}" 2>/dev/null || echo "0")
-        printf "  %2d) %-30s (групп: %3d, хостов: %4d, размер: %s)\n" \
-            "$num" "${ini_files[$i]}" "$groups" "$hosts" "$size"
-    done
+    def _flatten_tree(self, tree, prefix=''):
+        """Преобразует дерево в плоский список с путями"""
+        result = []
+        for name, data in tree.items():
+            path = f"{prefix}/{name}" if prefix else name
+            host_count = len(data.get('hosts', []))
+            child_count = len(data.get('children', {}))
+            
+            total_hosts = host_count
+            for child in data.get('children', {}).values():
+                total_hosts += self._count_hosts(child)
+            
+            result.append({
+                'name': name,
+                'path': path,
+                'hosts': data.get('hosts', []),
+                'host_count': host_count,
+                'total_hosts': total_hosts,
+                'child_count': child_count,
+                'children': list(data.get('children', {}).keys())
+            })
+            
+            if data.get('children'):
+                result.extend(self._flatten_tree(data['children'], path))
+        
+        return result
     
-    echo "============================================================"
-    echo "  0) Выход"
-    echo "============================================================"
-    read -p "Введите номер (1-${#ini_files[@]}, 0-выход): " ini_num
+    def _count_hosts(self, data):
+        """Подсчитывает общее количество хостов в поддереве"""
+        count = len(data.get('hosts', []))
+        for child in data.get('children', {}).values():
+            count += self._count_hosts(child)
+        return count
     
-    if ! [[ "$ini_num" =~ ^[0-9]+$ ]]; then
-        echo "Ошибка: введите число!"
-        sleep 1
-        return 1
-    fi
+    def select_host(self):
+        """Выбор хоста/группы"""
+        if not os.path.exists(self.ini_file):
+            print(f"[ERROR] Файл {self.ini_file} не найден!")
+            return False
+        
+        tree, groups = self.parse_ini_with_hierarchy(self.ini_file)
+        if not tree:
+            print("[ERROR] Не удалось разобрать INI файл!")
+            return False
+        
+        self.tree = tree
+        self.group_hosts = groups
+        
+        # Получаем плоский список с путями
+        self.flat_groups = self._flatten_tree(tree)
+        
+        print("=" * 60)
+        print("              ВЫБЕРИ ХОСТ ИЛИ ГРУППУ")
+        print("=" * 60)
+        print(f"  INI файл: {self.ini_file}")
+        print("=" * 60)
+        
+        # Показываем нумерованный список всех групп
+        print("\nAVAILABLE GROUPS:")
+        print("-" * 60)
+        
+        sorted_groups = sorted(self.flat_groups, key=lambda x: x['path'])
+        
+        for i, g in enumerate(sorted_groups, 1):
+            indent = "  " * (g['path'].count('/'))
+            icon = "[DIR]" if g['child_count'] > 0 else "[HOST]"
+            print(f"{indent}{i:3}) {icon} {g['name']} ({g['total_hosts']} hosts)")
+        
+        print("-" * 60)
+        print("  0) Выход")
+        print("=" * 60)
+        
+        try:
+            choice = input("Введите номер (1-{}, 0-выход): ".format(len(sorted_groups)))
+            
+            if not choice:
+                return False
+            
+            choice = int(choice)
+            if choice == 0:
+                sys.exit(0)
+            elif 1 <= choice <= len(sorted_groups):
+                selected = sorted_groups[choice - 1]
+                self.target_host = selected['name']
+                print(f"\n[OK] Выбрана группа: {selected['path']}")
+                print(f"   Хостов: {selected['host_count']}")
+                print(f"   Всего хостов в поддереве: {selected['total_hosts']}")
+                return True
+            else:
+                print("[ERROR] Неверный выбор!")
+                return False
+        except ValueError:
+            print("[ERROR] Введите число!")
+            return False
     
-    if [[ $ini_num -eq 0 ]]; then
-        echo "Выход..."
-        exit 0
-    elif [[ $ini_num -ge 1 && $ini_num -le ${#ini_files[@]} ]]; then
-        TARGET_INI="${ini_files[$((ini_num-1))]}"
-        echo "✅ Выбран INI файл: $TARGET_INI"
-        return 0
-    else
-        echo "Ошибка: неверный выбор!"
-        sleep 1
-        return 1
-    fi
-}
-
-# ============================================================
-# Функция: Выбор хоста/группы с древовидной структурой
-# ============================================================
-select_host_or_group() {
-    if [[ ! -f "$TARGET_INI" ]]; then
-        echo "❌ INI файл не найден!"
-        return 1
-    fi
+    def cleanup_ssh_env(self):
+        """Очищает переменные окружения, мешающие SSH"""
+        problematic_vars = ['ANSIBLE_SSH_ARGS', 'GIT_SSH_COMMAND', 'SSH_CONFIG']
+        for var in problematic_vars:
+            if var in os.environ:
+                print(f"[INFO] Удаляем переменную {var}={os.environ[var]}")
+                del os.environ[var]
+        
+        ssh_config = os.path.expanduser('~/.ssh/config')
+        if os.path.exists(ssh_config):
+            with open(ssh_config, 'r') as f:
+                content = f.read()
+                if 'config_mobaxterm' in content:
+                    print("[WARN] В ~/.ssh/config найдена ссылка на config_mobaxterm")
+                    print("[INFO] Создаем резервную копию и исправляем...")
+                    backup = ssh_config + '.bak'
+                    os.rename(ssh_config, backup)
+                    print(f"[INFO] Создан бэкап: {backup}")
+                    with open(ssh_config, 'w') as f:
+                        f.write("# Clean config created by KioskManager\n")
+                        f.write("Host *\n")
+                        f.write("    StrictHostKeyChecking no\n")
+                        f.write("    UserKnownHostsFile /dev/null\n")
     
-    clear
-    echo "============================================================"
-    echo "              ВЫБЕРИ ХОСТ ИЛИ ГРУППУ"
-    echo "============================================================"
-    echo "  INI файл: $TARGET_INI"
-    echo "============================================================"
-    
-    # Собираем все группы с хостами
-    local groups=()
-    local group_hosts=()
-    local option_num=1
-    local option_map=()
-    
-    while IFS= read -r line; do
-        if [[ "$line" =~ ^\[([^\]]+)\]$ ]]; then
-            local group_name="${BASH_REMATCH[1]}"
-            # Пропускаем служебные группы
-            if [[ "$group_name" == "all:vars" || "$group_name" == "all_hosts" ]]; then
+    def run_ansible(self, args):
+        """Запускает ansible с аргументами"""
+        if not self.ini_file or not self.target_host:
+            print("[ERROR] Не выбрана точка!")
+            return
+        
+        # Находим ansible
+        ansible_cmd = self.find_ansible()
+        if not ansible_cmd:
+            print("[ERROR] Ansible не найден в системе!")
+            return
+        
+        cmd = f"{ansible_cmd} -i {self.ini_file} {self.target_host} {args}"
+        
+        print(f"\n[RUN] Выполняю: {cmd}")
+        print("-" * 60)
+        
+        # Запускаем команду с bash -c для правильного выполнения
+        full_cmd = f"bash -c '{cmd}'"
+        process = subprocess.Popen(full_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        output, _ = process.communicate()
+        
+        lines = output.split('\n')
+        i = 0
+        host_counter = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            
+            ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
+            if ip_match:
+                host_counter += 1
+                ip = ip_match.group(1)
+                host_name = self.host_names.get(ip, ip)
+                
+                if host_name != ip:
+                    line = line.replace(ip, f"{ip} ({host_name})")
+                
+                if host_counter > 1:
+                    print("=" * 60)
+                
+                print(line)
+                
+                i += 1
+                while i < len(lines):
+                    next_line = lines[i]
+                    next_ip_match = re.search(r'^(\d+\.\d+\.\d+\.\d+)', next_line)
+                    if next_ip_match:
+                        break
+                    
+                    if next_line.strip():
+                        print(next_line)
+                    i += 1
+                
+                print()
                 continue
-            fi
-            # Проверяем, есть ли хосты в группе
-            local has_hosts=$(sed -n "/^\[${group_name}\]/,/^\[/p" "$TARGET_INI" 2>/dev/null | grep -c "^[0-9]" 2>/dev/null || echo "0")
-            if [[ $has_hosts -gt 0 ]]; then
-                groups+=("$group_name")
-                group_hosts+=("$has_hosts")
-            fi
-        fi
-    done < "$TARGET_INI"
+            else:
+                if line.strip():
+                    print(line)
+                i += 1
+        
+        print("-" * 60)
     
-    if [[ ${#groups[@]} -eq 0 ]]; then
-        echo "❌ В INI файле нет групп с хостами!"
-        return 1
-    fi
+    #==================================================================
+    # function ping()
+    #==================================================================
+    def ping(self):
+        """Пинг хостов"""
+        self.run_ansible("-m ping")
     
-    # Показываем группы
-    echo "📊 ДОСТУПНЫЕ ГРУППЫ:"
-    echo "============================================================"
+    #==================================================================
+    # function view_files()
+    #==================================================================
+    def view_files(self):
+        """Просмотр директории"""
+        if not self.ini_file or not self.target_host:
+            print("[ERROR] Не выбрана точка!")
+            return
+        
+        print("=" * 60)
+        print("ПРОСМОТР ДИРЕКТОРИИ")
+        print("=" * 60)
+        print("Пример: /etc/sst-iiko/  /opt/sst-iiko/img/")
+        print("=" * 60)
+        
+        path = input("Введите путь (или '0' для отмены): ")
+        if path == '0' or not path:
+            return
+        
+        if not path.endswith('/'):
+            path += '/'
+        
+        self.run_ansible(f"-m shell -a \"ls -lth {path} 2>/dev/null || echo '[ERROR] Директория не найдена'\" --become")
     
-    for i in "${!groups[@]}"; do
-        local group="${groups[$i]}"
-        local count="${group_hosts[$i]}"
-        printf "  %4d) %-50s (%d хостов)\n" "$((i+1))" "$group" "$count"
-        option_map+=("$group")
-    done
+    #==================================================================
+    # function copy_files()
+    #==================================================================
+    def copy_files(self):
+        """Копирование файлов"""
+        if not self.ini_file or not self.target_host:
+            print("[ERROR] Не выбрана точка!")
+            return
+        
+        print("=" * 60)
+        print("ФАЙЛЫ В ~/WORK/FILES/:")
+        print("=" * 60)
+        os.system("ls -lth ~/WORK/FILES/ 2>/dev/null || echo '[ERROR] ~/WORK/FILES/ не существует'")
+        print("=" * 60)
+        
+        filename = input("Введите имя файла для копирования (или '0' для отмены): ")
+        if filename == '0' or not filename:
+            return
+        
+        source = os.path.expanduser(f"~/WORK/FILES/{filename}")
+        if not os.path.exists(source):
+            print(f"[ERROR] {source} не найден!")
+            return
+        
+        dest = input("Введите путь для копирования (или '0' для отмены): ")
+        if dest == '0' or not dest:
+            return
+        
+        if not dest.endswith('/'):
+            dest += '/'
+        
+        self.run_ansible(f"-m copy -a \"src={source} dest={dest}\" --become")
     
-    echo "============================================================"
-    echo "  0) Выход"
-    echo "  F) Выбрать другой INI файл"
-    echo "============================================================"
-    read -p "Введите номер (1-${#groups[@]}, 0-выход, F-сменить INI): " choice
+    #==================================================================
+    # function delete_files()
+    #==================================================================
+    def delete_files(self):
+        """Удаление файлов"""
+        if not self.ini_file or not self.target_host:
+            print("[ERROR] Не выбрана точка!")
+            return
+        
+        print("=" * 60)
+        print("УДАЛЕНИЕ ФАЙЛОВ")
+        print("=" * 60)
+        print("Введите путь для поиска:")
+        print("Пример: /etc/sst-iiko/  /opt/sst-iiko/")
+        print("=" * 60)
+        
+        path = input("Введите путь (или '0' для отмены): ")
+        if path == '0' or not path:
+            return
+        
+        if not path.endswith('/'):
+            path += '/'
+        
+        print("Выберите способ удаления:")
+        print("  1) По имени файла")
+        print("  2) По MD5 сумме")
+        print("  0) Отмена")
+        
+        method = input("Введите номер (0-2): ")
+        if method == '0' or not method:
+            return
+        
+        if method == '1':
+            filename = input("Введите имя файла для удаления: ")
+            if not filename:
+                return
+            full_path = f"{path}{filename}"
+            confirm = input(f"Удалить '{full_path}'? (y/n): ")
+            if confirm.lower() == 'y':
+                self.run_ansible(f"-m file -a \"path='{full_path}' state=absent\" --become")
+        
+        elif method == '2':
+            md5 = input("Введите MD5 сумму файла: ")
+            if not md5:
+                return
+            self.run_ansible(f"-m shell -a \"find '{path}' -type f -exec md5sum {{}} \\; | grep '^{md5} ' | head -1 | awk '{{print $2}}' | xargs rm -f\" --become")
+        
+        else:
+            print("[ERROR] Неверный выбор!")
     
-    if [[ "$choice" == "F" || "$choice" == "f" ]]; then
-        select_ini_file
-        if [[ $? -eq 0 ]]; then
-            select_host_or_group
-        fi
-        return
-    fi
+    #==================================================================
+    # function view_config()
+    #==================================================================
+    def view_config(self):
+        """Просмотр конфига"""
+        if not self.ini_file or not self.target_host:
+            print("[ERROR] Не выбрана точка!")
+            return
+        
+        print("=" * 60)
+        print("ПРОСМОТР КОНФИГА /etc/sst-iiko/settings.ini")
+        print("=" * 60)
+        print("  1) Весь конфиг")
+        print("  2) Конкретные параметры")
+        print("  3) Изменить параметры")
+        print("  0) Назад")
+        print("=" * 60)
+        
+        choice = input("Введите номер (0-3): ")
+        
+        if choice == '1':
+            self.run_ansible("-m shell -a \"cat /etc/sst-iiko/settings.ini 2>/dev/null || echo '[ERROR] Файл не найден'\" --become")
+        elif choice == '2':
+            params = input("Введите параметры через пробел: ")
+            if params:
+                pattern = '|'.join(params.split())
+                self.run_ansible(f"-m shell -a \"grep -E '^({pattern})=' /etc/sst-iiko/settings.ini 2>/dev/null || echo '[ERROR] Параметры не найдены'\" --become")
+        elif choice == '3':
+            self.edit_config()
     
-    if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
-        echo "Ошибка: введите число!"
-        sleep 1
-        select_host_or_group
-        return
-    fi
+    #==================================================================
+    # function edit_config()
+    #==================================================================
+    def edit_config(self):
+        """Изменение параметров в конфиге"""
+        if not self.ini_file or not self.target_host:
+            print("[ERROR] Не выбрана точка!")
+            return
+        
+        print("=" * 60)
+        print("ИЗМЕНЕНИЕ ПАРАМЕТРОВ КОНФИГА")
+        print("=" * 60)
+        print("Введите параметр и новое значение")
+        print("Пример: productDescriptionTypes=card, info")
+        print("Пример: showFoodValues=Never")
+        print("=" * 60)
+        
+        param_input = input("\nВведите параметр и значение (параметр=значение) или '0' для отмены: ")
+        if param_input == '0' or not param_input:
+            print("[CANCEL] Отменено")
+            return
+        
+        if '=' not in param_input:
+            print("[ERROR] Неверный формат! Используйте: параметр=значение")
+            return
+        
+        param, value = param_input.split('=', 1)
+        param = param.strip()
+        value = value.strip()
+        
+        if not param or not value:
+            print("[ERROR] Параметр и значение не могут быть пустыми!")
+            return
+        
+        print("\n" + "=" * 60)
+        print(f"Будет изменен параметр: {param}={value}")
+        print("=" * 60)
+        confirm = input("Продолжить? (y/N): ")
+        if confirm.lower() != 'y':
+            print("[CANCEL] Отменено")
+            return
+        
+        cmd = f"grep -q '^{param}=' /etc/sst-iiko/settings.ini && sed -i 's/^{param}=.*/{param}={value}/' /etc/sst-iiko/settings.ini || echo '{param}={value}' >> /etc/sst-iiko/settings.ini && echo '[OK] {param}={value}'"
+        
+        self.run_ansible(f"-m shell -a \"{cmd}\" --become")
     
-    if [[ $choice -eq 0 ]]; then
-        echo "Выход..."
-        exit 0
-    elif [[ $choice -ge 1 && $choice -le ${#groups[@]} ]]; then
-        local selected="${option_map[$((choice-1))]}"
-        TARGET_GROUP="$selected"
-        TARGET_HOST="$selected"
-        echo "✅ Выбрана группа: $selected"
-        sleep 2
-        return 0
-    else
-        echo "Ошибка: неверный выбор!"
-        sleep 1
-        select_host_or_group
-    fi
-}
+    #==================================================================
+    # function restart_sst()
+    #==================================================================
+    def restart_sst(self):
+        """Перезапуск SST"""
+        if not self.ini_file or not self.target_host:
+            print("[ERROR] Не выбрана точка!")
+            return
+        
+        print("=" * 60)
+        print("ВНИМАНИЕ! Перезапуск SST!")
+        print("=" * 60)
+        print()
+        
+        confirm = input("Перезапустить SST на всех хостах группы? (y/N): ")
+        if confirm.lower() != 'y':
+            print("[CANCEL] Отменено")
+            return
+        
+        print("\nПерезапуск SST...")
+        print("-" * 60)
+        
+        # Перезапускаем активный сервис - используем однострочную команду
+        cmd = "if systemctl status sst-iiko 2>/dev/null | grep -q 'Active: active'; then sudo systemctl restart sst-iiko && echo '[OK] sst-iiko restarted'; elif systemctl status xsst-iiko 2>/dev/null | grep -q 'Active: active'; then sudo systemctl restart xsst-iiko && echo '[OK] xsst-iiko restarted'; else echo '[WARN] No active SST service found'; fi"
+        
+        self.run_ansible(f"-m shell -a \"{cmd}\" --become")
+    
+    #==================================================================
+    # function status_sst()
+    #==================================================================
+    def status_sst(self):
+        """Статус SST - только важная информация"""
+        if not self.ini_file or not self.target_host:
+            print("[ERROR] Не выбрана точка!")
+            return
+        
+        # Используем одинарные кавычки для внешней обертки
+        cmd = 'echo "=== SST STATUS ===" && sst_status=$(systemctl status sst-iiko 2>/dev/null | grep -E "Active:" | sed "s/^.*Active: //") && xsst_status=$(systemctl status xsst-iiko 2>/dev/null | grep -E "Active:" | sed "s/^.*Active: //") && echo "    sst-iiko - $sst_status" && echo "    xsst-iiko - $xsst_status" && echo "" && echo "=== API INFO ===" && curl -sw "HTTP: %{http_code}\\n" localhost:10000 2>/dev/null | grep -E "Current state|Hardware|Fiscal|Network|Terminal|deviceName|Theme|Version|HTTP:" || echo "[ERROR] Port 10000 unavailable"'
+        
+        self.run_ansible(f"-m shell -a '{cmd}' --become")
+    
+    #==================================================================
+    # function main_menu()
+    #==================================================================
+    def main_menu(self):
+        """Главное меню"""
+        while True:
+            self.clear_screen()
+            print("=" * 60)
+            print("              УПРАВЛЕНИЕ КИОСКАМИ")
+            print("=" * 60)
+            print(f"  INI файл: {self.ini_file}")
+            print(f"  Точка:    {self.target_host if self.target_host else 'не выбрана'}")
+            if self.target_host:
+                for g in self.flat_groups:
+                    if g['name'] == self.target_host:
+                        print(f"  Хостов:   {g['total_hosts']}")
+                        break
+            print("=" * 60)
+            print("  1) Пинг хоста/группы")
+            print("  2) Просмотр директории")
+            print("  3) Копировать файлы")
+            print("  4) Удалить файлы")
+            print("  5) Просмотр/изменение конфига")
+            print("  6) RESTART SST (ОСТОРОЖНО!)")
+            print("  7) Статус SST")
+            print("  8) Сменить точку")
+            print("  0) Выход")
+            print("=" * 60)
+            
+            choice = input("Введите номер (0-8): ")
+            
+            if choice == '0':
+                print("Выход...")
+                break
+            elif choice == '1':
+                self.ping()
+            elif choice == '2':
+                self.view_files()
+            elif choice == '3':
+                self.copy_files()
+            elif choice == '4':
+                self.delete_files()
+            elif choice == '5':
+                self.view_config()
+            elif choice == '6':
+                self.restart_sst()
+            elif choice == '7':
+                self.status_sst()
+            elif choice == '8':
+                self.select_host()
+            else:
+                print("[ERROR] Неверный выбор!")
+            
+            input("\nНажмите Enter для продолжения...")
 
-# ============================================================
-# Функции управления
-# ============================================================
+def main():
+    manager = KioskManager()
+    
+    # Очищаем экран при старте
+    manager.clear_screen()
+    
+    print("=" * 60)
+    print("              ЗАПУСК УПРАВЛЕНИЯ КИОСКАМИ")
+    print("=" * 60)
+    print()
+    
+    # Очищаем переменные окружения, мешающие SSH
+    manager.cleanup_ssh_env()
+    
+    # Проверяем наличие inventory.ini
+    if not os.path.exists("inventory.ini"):
+        print("[ERROR] Файл inventory.ini не найден!")
+        sys.exit(1)
+    
+    # Выбор хоста/группы
+    if not manager.select_host():
+        print("[ERROR] Не удалось выбрать точку!")
+        sys.exit(1)
+    
+    # Запуск главного меню
+    manager.main_menu()
 
-ping_hosts() {
-    if [[ -z "$TARGET_HOST" ]]; then
-        echo "❌ Не выбран хост или группа!"
-        return 1
-    fi
-    echo "============================================================"
-    echo "📡 Пинг: $TARGET_HOST"
-    echo "============================================================"
-    ansible -i "$TARGET_INI" "$TARGET_HOST" -m ping
-}
-
-view_files() {
-    if [[ -z "$TARGET_HOST" ]]; then
-        echo "❌ Не выбран хост или группа!"
-        return 1
-    fi
-    echo "============================================================"
-    echo "📂 Просмотр директории на $TARGET_HOST"
-    echo "============================================================"
-    read -p "Введите путь (или '0' для отмены): " dest_dir
-    
-    if [[ "$dest_dir" == "0" ]]; then
-        return 0
-    fi
-    if [[ -z "$dest_dir" ]]; then
-        echo "Ошибка: Путь не может быть пустым!"
-        return 1
-    fi
-    [[ ! "$dest_dir" =~ /$ ]] && dest_dir="$dest_dir/"
-    
-    ansible -i "$TARGET_INI" "$TARGET_HOST" -m shell -a "ls -lth $dest_dir 2>/dev/null || echo '❌ Директория не найдена'" --become
-}
-
-copy_files() {
-    if [[ -z "$TARGET_HOST" ]]; then
-        echo "❌ Не выбран хост или группа!"
-        return 1
-    fi
-    
-    echo "============================================================"
-    echo "📁 ФАЙЛЫ В ~/WORK/FILES/:"
-    echo "============================================================"
-    ls -lth ~/WORK/FILES/ 2>/dev/null || echo "❌ ~/WORK/FILES/ не существует"
-    echo "============================================================"
-    read -p "Введите имя файла: " filename
-    
-    if [[ -z "$filename" ]]; then
-        echo "Ошибка: Имя не может быть пустым!"
-        return 1
-    fi
-    
-    local source_path="$HOME/WORK/FILES/$filename"
-    if [[ ! -e "$source_path" ]]; then
-        echo "❌ $source_path не найден!"
-        return 1
-    fi
-    
-    read -p "Введите путь для копирования (или '0' для отмены): " dest_dir
-    [[ "$dest_dir" == "0" ]] && return 0
-    [[ -z "$dest_dir" ]] && echo "Ошибка: Путь не может быть пустым!" && return 1
-    [[ ! "$dest_dir" =~ /$ ]] && dest_dir="$dest_dir/"
-    
-    ansible -i "$TARGET_INI" "$TARGET_HOST" -m copy -a "src=$source_path dest=$dest_dir" --become
-}
-
-delete_files() {
-    if [[ -z "$TARGET_HOST" ]]; then
-        echo "❌ Не выбран хост или группа!"
-        return 1
-    fi
-    
-    echo "============================================================"
-    echo "🗑️ УДАЛЕНИЕ ФАЙЛОВ"
-    echo "============================================================"
-    read -p "Введите путь (или '0' для отмены): " dest_dir
-    
-    [[ "$dest_dir" == "0" ]] && return 0
-    [[ -z "$dest_dir" ]] && echo "Ошибка: Путь не может быть пустым!" && return 1
-    [[ ! "$dest_dir" =~ /$ ]] && dest_dir="$dest_dir/"
-    
-    echo "Выберите способ удаления:"
-    echo " 1) По имени файла"
-    echo " 2) По MD5 сумме"
-    echo " 0) Отмена"
-    read -p "Введите номер (0-2): " method
-    
-    case $method in
-        0) return 0 ;;
-        1) read -p "Введите имя файла: " filename
-           [[ -z "$filename" ]] && echo "Ошибка: Имя не может быть пустым!" && return 1
-           local full_path="${dest_dir}${filename}"
-           read -p "Удалить '$full_path'? (y/n): " confirm
-           [[ "$confirm" != "y" && "$confirm" != "Y" ]] && return 0
-           ansible -i "$TARGET_INI" "$TARGET_HOST" -m file -a "path='$full_path' state=absent" --become
-           ;;
-        2) read -p "Введите MD5 сумму: " md5sum
-           [[ -z "$md5sum" ]] && echo "Ошибка: MD5 не может быть пустым!" && return 1
-           local found_file=$(ansible -i "$TARGET_INI" "$TARGET_HOST" -m shell -a "find '$dest_dir' -type f -exec md5sum {} \; | grep '^$md5sum ' | head -1 | awk '{print \$2}'" --become 2>/dev/null | grep -v "changed" | tail -1)
-           [[ -z "$found_file" ]] && echo "❌ Файл не найден!" && return 1
-           echo "Найден файл: $found_file"
-           read -p "Удалить? (y/n): " confirm
-           [[ "$confirm" != "y" && "$confirm" != "Y" ]] && return 0
-           ansible -i "$TARGET_INI" "$TARGET_HOST" -m file -a "path='$found_file' state=absent" --become
-           ;;
-        *) echo "Неверный выбор!" ;;
-    esac
-}
-
-view_config() {
-    if [[ -z "$TARGET_HOST" ]]; then
-        echo "❌ Не выбран хост или группа!"
-        return 1
-    fi
-    
-    echo "============================================================"
-    echo "📄 ПРОСМОТР КОНФИГА /etc/sst-iiko/settings.ini"
-    echo "============================================================"
-    echo " 1) Весь конфиг"
-    echo " 2) Конкретные параметры"
-    echo " 0) Назад"
-    read -p "Введите номер (0-2): " mode
-    
-    case $mode in
-        0) return 0 ;;
-        1) ansible -i "$TARGET_INI" "$TARGET_HOST" -m shell -a "cat /etc/sst-iiko/settings.ini 2>/dev/null || echo '❌ Файл не найден'" --become ;;
-        2) read -p "Введите параметры через пробел: " params
-           [[ -z "$params" ]] && echo "Ошибка: Параметры не могут быть пустыми!" && return 1
-           local grep_pattern=$(echo "$params" | tr ' ' '|')
-           ansible -i "$TARGET_INI" "$TARGET_HOST" -m shell -a "grep -E '^($grep_pattern)=' /etc/sst-iiko/settings.ini 2>/dev/null || echo '❌ Параметры не найдены'" --become ;;
-        *) echo "Неверный выбор!" ;;
-    esac
-}
-
-restart_sst() {
-    if [[ -z "$TARGET_HOST" ]]; then
-        echo "❌ Не выбран хост или группа!"
-        return 1
-    fi
-    
-    echo "============================================================"
-    echo -e "\033[1;33m⚠️ ВНИМАНИЕ! Перезапуск SST!\033[0m"
-    echo "============================================================"
-    read -p "Вы уверены? (y/N): " confirm
-    [[ ! "$confirm" =~ ^[Yy]$ ]] && echo "❌ Отменено" && return 0
-    
-    ansible -i "$TARGET_INI" "$TARGET_HOST" -m shell -a "
-if systemctl is-enabled sst-iiko 2>/dev/null | grep -q enabled; then
-    sudo systemctl restart sst-iiko
-    echo '✅ sst-iiko перезапущен'
-elif systemctl is-enabled xsst-iiko 2>/dev/null | grep -q enabled; then
-    sudo systemctl restart xsst-iiko
-    echo '✅ xsst-iiko перезапущен'
-else
-    echo '❌ Сервис SST не найден'
-fi" --become
-}
-
-status_sst() {
-    if [[ -z "$TARGET_HOST" ]]; then
-        echo "❌ Не выбран хост или группа!"
-        return 1
-    fi
-    
-    ansible -i "$TARGET_INI" "$TARGET_HOST" -m shell -a "
-echo '--- Статус сервисов ---'
-systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Loaded|Active|Main PID' || echo '❌ Сервисы не найдены'
-echo ''
-echo '--- Проверка порта 10000 ---'
-curl -s -o /dev/null -w 'HTTP Code: %{http_code}\n' localhost:10000 2>/dev/null || echo '❌ Порт 10000 недоступен'" --become
-}
-
-# ============================================================
-# Главное меню
-# ============================================================
-
-main_menu() {
-    while true; do
-        clear
-        echo "============================================================"
-        echo "              🖥️ УПРАВЛЕНИЕ КИОСКАМИ"
-        echo "============================================================"
-        echo "  INI файл: ${TARGET_INI:-не выбран}"
-        echo "  Точка:    ${TARGET_HOST:-не выбрана}"
-        echo "============================================================"
-        echo "  1) Пинг хоста/группы"
-        echo "  2) Просмотр директории"
-        echo "  3) Копировать файлы"
-        echo "  4) Удалить файлы"
-        echo "  5) Просмотр конфига"
-        echo "  6) 🔄 RESTART SST (ОСТОРОЖНО!)"
-        echo "  7) 📊 Статус SST"
-        echo "  8) 🔄 Сменить точку"
-        echo "  I) 🔄 Сменить INI файл"
-        echo "  0) Выход"
-        echo "============================================================"
-        read -p "Введите номер (0-8, I): " choice
-
-        case $choice in
-            1) ping_hosts ;;
-            2) view_files ;;
-            3) copy_files ;;
-            4) delete_files ;;
-            5) view_config ;;
-            6) restart_sst ;;
-            7) status_sst ;;
-            8) select_host_or_group ;;
-            I|i) select_ini_file ;;
-            0) echo "Выход..."; exit 0 ;;
-            *) echo "❌ Неверный выбор!"; sleep 1 ;;
-        esac
-        echo ""
-        read -p "Нажмите Enter для продолжения..."
-    done
-}
-
-# ============================================================
-# Запуск
-# ============================================================
-
-select_ini_file
-if [[ -n "$TARGET_INI" ]]; then
-    select_host_or_group
-fi
-
-if [[ -n "$TARGET_HOST" ]]; then
-    main_menu
-else
-    echo "❌ Не удалось выбрать точку!"
-    exit 1
-fi
+if __name__ == '__main__':
+    main()
