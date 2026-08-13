@@ -508,7 +508,7 @@ class KioskManager:
         print("\nТЕКУЩИЙ СТАТУС СЕРВИСОВ:")
         print("-" * 60)
         cmd_status = 'echo "    sst-iiko - $(systemctl status sst-iiko 2>/dev/null | grep -E \"Active:\" | sed \"s/.*Active: //\")" && echo "    xsst-iiko - $(systemctl status xsst-iiko 2>/dev/null | grep -E \"Active:\" | sed \"s/.*Active: //\")"'
-        self.run_ansible(f"-m shell -a '{cmd_status}' --become')
+        self.run_ansible(f"-m shell -a \"{cmd_status}\" --become")
         
         confirm = input("\nПерезапустить SST? (y/N): ")
         if confirm.lower() != 'y':
@@ -531,7 +531,7 @@ fi
         print("\nНОВЫЙ СТАТУС СЕРВИСОВ:")
         print("-" * 60)
         cmd_status = 'echo "    sst-iiko - $(systemctl status sst-iiko 2>/dev/null | grep -E \"Active:\" | sed \"s/.*Active: //\")" && echo "    xsst-iiko - $(systemctl status xsst-iiko 2>/dev/null | grep -E \"Active:\" | sed \"s/.*Active: //\")"'
-        self.run_ansible(f"-m shell -a '{cmd_status}' --become')
+        self.run_ansible(f"-m shell -a \"{cmd_status}\" --become")
     
     #==================================================================
     # function status_sst()
