@@ -546,10 +546,11 @@ class KioskManager:
         print("=" * 60)
         print("  1) Весь конфиг")
         print("  2) Конкретные параметры")
+        print("  3) Изменить параметры")
         print("  0) Назад")
         print("=" * 60)
         
-        choice = input("Введите номер (0-2): ")
+        choice = input("Введите номер (0-3): ")
         
         if choice == '1':
             self.run_ansible("-m shell -a \"cat /etc/sst-iiko/settings.ini 2>/dev/null || echo '[ERROR] Файл не найден'\" --become")
@@ -558,6 +559,88 @@ class KioskManager:
             if params:
                 pattern = '|'.join(params.split())
                 self.run_ansible(f"-m shell -a \"grep -E '^({pattern})=' /etc/sst-iiko/settings.ini 2>/dev/null || echo '[ERROR] Параметры не найдены'\" --become")
+        elif choice == '3':
+            self.edit_config()
+    
+    def edit_config(self):
+        """Изменение параметров в конфиге"""
+        if not self.ini_file or not self.target_host:
+            print("[ERROR] Не выбрана точка!")
+            return
+        
+        print("=" * 60)
+        print("ИЗМЕНЕНИЕ ПАРАМЕТРОВ КОНФИГА")
+        print("=" * 60)
+        print("Введите параметр и новое значение")
+        print("Пример: productDescriptionTypes=card, info")
+        print("Пример: showFoodValues=Never")
+        print("=" * 60)
+        
+        # Сначала показываем текущие параметры
+        print("\nТЕКУЩИЕ ПАРАМЕТРЫ:")
+        print("-" * 60)
+        self.run_ansible("-m shell -a \"cat /etc/sst-iiko/settings.ini 2>/dev/null | grep -v '^#' | grep -v '^$' || echo '[ERROR] Файл не найден'\" --become")
+        
+        print("\n" + "=" * 60)
+        
+        param_input = input("Введите параметр и значение (параметр=значение) или '0' для отмены: ")
+        if param_input == '0' or not param_input:
+            print("[CANCEL] Отменено")
+            return
+        
+        # Разбираем ввод
+        if '=' not in param_input:
+            print("[ERROR] Неверный формат! Используйте: параметр=значение")
+            return
+        
+        param, value = param_input.split('=', 1)
+        param = param.strip()
+        value = value.strip()
+        
+        if not param or not value:
+            print("[ERROR] Параметр и значение не могут быть пустыми!")
+            return
+        
+        # Подтверждение
+        print("\n" + "=" * 60)
+        print(f"Будет изменен параметр: {param}={value}")
+        print("=" * 60)
+        confirm = input("Продолжить? (y/N): ")
+        if confirm.lower() != 'y':
+            print("[CANCEL] Отменено")
+            return
+        
+        # Формируем команду для замены параметра
+        # Используем sed для замены строки
+        sed_cmd = f"sed -i 's/^{param}=.*/{param}={value}/' /etc/sst-iiko/settings.ini"
+        
+        # Проверяем, существует ли параметр
+        check_cmd = f"grep -q '^{param}=' /etc/sst-iiko/settings.ini"
+        
+        # Если параметра нет, добавляем его в конец файла
+        add_cmd = f"echo '{param}={value}' >> /etc/sst-iiko/settings.ini"
+        
+        # Комбинированная команда
+        full_cmd = f"""
+if grep -q '^{param}=' /etc/sst-iiko/settings.ini 2>/dev/null; then
+    echo "Параметр {param} найден, заменяем..."
+    sed -i 's/^{param}=.*/{param}={value}/' /etc/sst-iiko/settings.ini
+    echo "[OK] Параметр {param} изменен на {value}"
+else
+    echo "Параметр {param} не найден, добавляем..."
+    echo '{param}={value}' >> /etc/sst-iiko/settings.ini
+    echo "[OK] Параметр {param} добавлен со значением {value}"
+fi
+cat /etc/sst-iiko/settings.ini | grep -E '^{param}='
+"""
+        
+        self.run_ansible(f"-m shell -a \"{full_cmd}\" --become")
+        
+        # Предлагаем перезапустить SST
+        print("\n" + "=" * 60)
+        restart = input("Перезапустить SST для применения изменений? (y/N): ")
+        if restart.lower() == 'y':
+            self.restart_sst()
     
     def restart_sst(self):
         """Перезапуск SST"""
@@ -604,7 +687,7 @@ class KioskManager:
             print("  2) Просмотр директории")
             print("  3) Копировать файлы")
             print("  4) Удалить файлы")
-            print("  5) Просмотр конфига")
+            print("  5) Просмотр/изменение конфига")
             print("  6) RESTART SST (ОСТОРОЖНО!)")
             print("  7) Статус SST")
             print("  8) Сменить точку")
