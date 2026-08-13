@@ -527,15 +527,10 @@ class KioskManager:
             print("[ERROR] Не выбрана точка!")
             return
         
-        # Используем тройные кавычки и одинарные для внешней обертки
-        cmd = '''
-echo "=== SST STATUS ==="
-systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Active:' | sed 's/^.*Active: //' | sed 's/^/    /'
-echo ""
-echo "=== API INFO ==="
-curl -sw "HTTP: %{http_code}\\n" localhost:10000 2>/dev/null | grep -E "Current state|Hardware|Fiscal|Network|Terminal|deviceName|Theme|Version|HTTP:" || echo "[ERROR] Port 10000 unavailable"
-'''
-        self.run_ansible(f"-m shell -a '{cmd}' --become")
+        # Однострочная команда с правильным экранированием
+        cmd = "echo '=== SST STATUS ===' && systemctl status sst-iiko xsst-iiko 2>/dev/null | grep -E 'Active:' | sed 's/^.*Active: //' | sed 's/^/    /' && echo '' && echo '=== API INFO ===' && curl -sw 'HTTP: %{http_code}\\n' localhost:10000 2>/dev/null | grep -E 'Current state|Hardware|Fiscal|Network|Terminal|deviceName|Theme|Version|HTTP:' || echo '[ERROR] Port 10000 unavailable'"
+        
+        self.run_ansible(f"-m shell -a \"{cmd}\" --become")
     
     #==================================================================
     # function main_menu()
