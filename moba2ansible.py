@@ -360,7 +360,7 @@ class KioskManager:
                 failed_hosts.append(ip)
             
             # Выводим результат
-            print("-" * 60)
+            print("=" * 60)
             print(f"{ip} ({host_name}) | {status}")
         
         # Выводим статистику
@@ -379,99 +379,99 @@ class KioskManager:
                 print(f"  - {ip} ({host_name})")
         print("=" * 60)
     
-#==================================================================
-# function view_files()
-#==================================================================
-def view_files(self):
-    """Просмотр директории"""
-    if not self.ini_file or not self.target_host:
-        print("[ERROR] Не выбрана точка!")
-        return
-    
-    print("=" * 60)
-    print("ПРОСМОТР ДИРЕКТОРИИ")
-    print("=" * 60)
-    print("Пример: /etc/sst-iiko/  /opt/sst-iiko/img/")
-    print("=" * 60)
-    
-    path = input("Введите путь (или '0' для отмены): ")
-    if path == '0' or not path:
-        return
-    
-    if not path.endswith('/'):
-        path += '/'
-    
-    # Получаем все хосты из выбранной группы
-    hosts = self._get_all_hosts_from_group(self.target_host)
-    
-    if not hosts:
-        print("[ERROR] Нет хостов в выбранной группе!")
-        return
-    
-    print("=" * 60)
-    print(f"ПРОСМОТР ДИРЕКТОРИИ: {path}")
-    print(f"Хостов: {len(hosts)}")
-    print("=" * 60)
-    
-    success_hosts = []
-    failed_hosts = []
-    
-    for ip in hosts:
-        host_name = self.host_names.get(ip, ip)
+    #==================================================================
+    # function view_files()
+    #==================================================================
+    def view_files(self):
+        """Просмотр директории"""
+        if not self.ini_file or not self.target_host:
+            print("[ERROR] Не выбрана точка!")
+            return
         
-        # Выполняем команду на хосте
-        cmd = f"ansible -i {self.ini_file} {ip} -m shell -a \"ls -lth {path} 2>/dev/null || echo '[ERROR] Директория не найдена'\" --become"
-        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        output, error = process.communicate()
-        
-        # Проверяем на недоступность
-        if "UNREACHABLE" in output or "Failed to connect" in output or "Connection timed out" in output:
-            print("=" * 60)
-            print(f"{ip} ({host_name}) | UNREACHABLE!")
-            failed_hosts.append(ip)
-            continue
-        
-        # Проверяем на ошибку директории
-        if "[ERROR] Директория не найдена" in output:
-            print("=" * 60)
-            print(f"{ip} ({host_name}) | [ERROR] Директория не найдена")
-            failed_hosts.append(ip)
-            continue
-        
-        # Успешный вывод
         print("=" * 60)
-        print(f"{ip} ({host_name})")
-        print("-" * 40)
+        print("ПРОСМОТР ДИРЕКТОРИИ")
+        print("=" * 60)
+        print("Пример: /etc/sst-iiko/  /opt/sst-iiko/img/")
+        print("=" * 60)
         
-        # Парсим вывод, убирая служебные строки
-        lines = output.split('\n')
-        for line in lines:
-            # Пропускаем строки с IP и статусом
-            if ip in line and ("SUCCESS" in line or "CHANGED" in line or "FAILED" in line):
-                continue
-            # Пропускаем пустые строки
-            if not line.strip():
-                continue
-            # Выводим содержимое
-            print(line)
+        path = input("Введите путь (или '0' для отмены): ")
+        if path == '0' or not path:
+            return
         
-        success_hosts.append(ip)
-    
-    # Выводим статистику
-    total = len(hosts)
-    success_count = len(success_hosts)
-    failed_count = len(failed_hosts)
-    
-    print("=" * 60)
-    print("СТАТИСТИКА:")
-    print(f"  Успешно: {success_count} из {total} хостов")
-    if failed_count > 0:
-        print(f"  Ошибок: {failed_count}")
-        print("\nХОСТЫ С ОШИБКАМИ:")
-        for ip in failed_hosts:
+        if not path.endswith('/'):
+            path += '/'
+        
+        # Получаем все хосты из выбранной группы
+        hosts = self._get_all_hosts_from_group(self.target_host)
+        
+        if not hosts:
+            print("[ERROR] Нет хостов в выбранной группе!")
+            return
+        
+        print("=" * 60)
+        print(f"ПРОСМОТР ДИРЕКТОРИИ: {path}")
+        print(f"Хостов: {len(hosts)}")
+        print("=" * 60)
+        
+        success_hosts = []
+        failed_hosts = []
+        
+        for ip in hosts:
             host_name = self.host_names.get(ip, ip)
-            print(f"  - {ip} ({host_name})")
-    print("=" * 60)
+            
+            # Выполняем команду на хосте
+            cmd = f"ansible -i {self.ini_file} {ip} -m shell -a \"ls -lth {path} 2>/dev/null || echo '[ERROR] Директория не найдена'\" --become"
+            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            output, error = process.communicate()
+            
+            # Проверяем на недоступность
+            if "UNREACHABLE" in output or "Failed to connect" in output or "Connection timed out" in output:
+                print("=" * 60)
+                print(f"{ip} ({host_name}) | UNREACHABLE!")
+                failed_hosts.append(ip)
+                continue
+            
+            # Проверяем на ошибку директории
+            if "[ERROR] Директория не найдена" in output:
+                print("=" * 60)
+                print(f"{ip} ({host_name}) | [ERROR] Директория не найдена")
+                failed_hosts.append(ip)
+                continue
+            
+            # Успешный вывод
+            print("=" * 60)
+            print(f"{ip} ({host_name})")
+            print("-" * 40)
+            
+            # Парсим вывод, убирая служебные строки
+            lines = output.split('\n')
+            for line in lines:
+                # Пропускаем строки с IP и статусом
+                if ip in line and ("SUCCESS" in line or "CHANGED" in line or "FAILED" in line):
+                    continue
+                # Пропускаем пустые строки
+                if not line.strip():
+                    continue
+                # Выводим содержимое
+                print(line)
+            
+            success_hosts.append(ip)
+        
+        # Выводим статистику
+        total = len(hosts)
+        success_count = len(success_hosts)
+        failed_count = len(failed_hosts)
+        
+        print("=" * 60)
+        print("СТАТИСТИКА:")
+        print(f"  Успешно: {success_count} из {total} хостов")
+        if failed_count > 0:
+            print(f"  Ошибок: {failed_count}")
+            print("\nХОСТЫ С ОШИБКАМИ:")
+            for ip in failed_hosts:
+                host_name = self.host_names.get(ip, ip)
+                print(f"  - {ip} ({host_name})")
+        print("=" * 60)
     
     #==================================================================
     # function copy_files()
@@ -686,10 +686,8 @@ def view_files(self):
             print(f"  INI файл: {self.ini_file}")
             print(f"  Точка:    {self.target_host if self.target_host else 'не выбрана'}")
             if self.target_host:
-                for g in self.flat_groups:
-                    if g['name'] == self.target_host:
-                        print(f"  Хостов:   {g['total_hosts']}")
-                        break
+                real_hosts = self._get_all_hosts_from_group(self.target_host)
+                print(f"  Хостов:   {len(real_hosts)}")
             print("=" * 60)
             print("  1) Пинг хоста/группы")
             print("  2) Просмотр директории")
