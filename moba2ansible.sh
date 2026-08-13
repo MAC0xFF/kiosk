@@ -159,7 +159,8 @@ run_ansible() {
             
             # Извлекаем имя хоста из строки
             local host_name=""
-            if [[ "$line" =~ [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\ \(([^)]+)\) ]]; then
+            # Ищем имя в скобках
+            if [[ "$line" =~ \(([^)]+)\) ]]; then
                 host_name="${BASH_REMATCH[1]}"
             else
                 host_name="$ip"
