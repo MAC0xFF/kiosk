@@ -17,9 +17,12 @@ class IikoAPIClient:
         self.api_key: Optional[str] = None
         self.org_id: Optional[str] = None
         self.terminal_group_id: Optional[str] = None
+        self.terminal_group_name: Optional[str] = None
         self.external_menu_id: Optional[str] = None
+        self.external_menu_name: Optional[str] = None
         self.pay_program_id: Optional[str] = None
         self.payment_type_id: Optional[str] = None
+        self.payment_type_name: Optional[str] = None
         self.wallet_id: Optional[str] = None
         
         # Данные приложения (из оригинального скрипта)
@@ -202,7 +205,7 @@ class IikoAPIClient:
             try:
                 # Проверяем структуру ответа
                 terminal_groups = []
-                seen_ids = set()  # Множество для отслеживания уже добавленных ID
+                seen_ids = set()
                 
                 if "terminalGroups" in response and response["terminalGroups"]:
                     for group in response["terminalGroups"]:
@@ -229,7 +232,7 @@ class IikoAPIClient:
                                     seen_ids.add(item_id)
                 
                 if terminal_groups:
-                    # Выводим список групп терминалов как у организаций
+                    # Выводим список групп терминалов
                     print("\nСписок групп терминалов:")
                     for tg in terminal_groups:
                         print(f"  ID: {tg['id']} - {tg['name']}")
@@ -238,12 +241,12 @@ class IikoAPIClient:
                     # Предлагаем ввести ID напрямую
                     tg_id = input("Введите ID группы терминалов: ").strip()
                     if tg_id:
-                        # Проверяем, есть ли такой ID в списке
                         found = False
                         for tg in terminal_groups:
                             if tg["id"] == tg_id:
                                 self.terminal_group_id = tg_id
-                                self._print_status(f"TerminalGroupID установлен: {self.terminal_group_id}", "success")
+                                self.terminal_group_name = tg["name"]
+                                self._print_status(f"TerminalGroupID установлен: {self.terminal_group_id} - {self.terminal_group_name}", "success")
                                 found = True
                                 break
                         if not found:
@@ -274,46 +277,55 @@ class IikoAPIClient:
         response = self._make_request("POST", "/api/1/payment_types", data)
         
         if response and "paymentTypes" in response:
-            # Формируем сокращенный вывод только с нужными полями
-            result = []
-            for pt in response["paymentTypes"]:
-                payment_info = {
-                    "id": pt.get("id"),
-                    "code": pt.get("code"),
-                    "name": pt.get("name"),
-                    "applicableMarketingCampaigns": pt.get("applicableMarketingCampaigns", []),
-                    "paymentTypeKind": pt.get("paymentTypeKind")
-                }
-                result.append(payment_info)
-            
-            # Выводим сокращенный JSON
-            print(json.dumps(result, indent=2, ensure_ascii=False))
+            # Выводим полный JSON для ознакомления
+            print(json.dumps(response["paymentTypes"], indent=2, ensure_ascii=False))
             print("")
             
-            # Предлагаем ввести ID для PaymentTypeId
-            pt_id = input("Введите ID типа оплаты для PaymentTypeId (или Enter чтобы пропустить): ").strip()
-            if pt_id:
-                # Проверяем, есть ли такой ID в списке
-                found = False
-                for pt in response["paymentTypes"]:
-                    if pt["id"] == pt_id:
-                        self.payment_type_id = pt_id
-                        self._print_status(f"PaymentTypeId установлен: {self.payment_type_id}", "success")
-                        found = True
-                        
-                        # Дополнительно проверяем наличие программы лояльности
-                        if "applicableMarketingCampaigns" in pt and pt["applicableMarketingCampaigns"]:
-                            campaigns = pt["applicableMarketingCampaigns"]
-                            if campaigns and len(campaigns) > 0:
-                                # Берем первую программу лояльности
-                                self.pay_program_id = campaigns[0]
-                                self._print_status(f"PayProgramId автоматически установлен: {self.pay_program_id}", "success")
-                        
-                        break
-                if not found:
-                    self._print_status("ID не найден в списке! PaymentTypeId не установлен.", "error")
+            # Сначала запрашиваем PayProgramId
+            print("Выберите программу лояльности (applicableMarketingCampaigns):")
+            print("Доступные программы:")
+            
+            # Собираем все уникальные программы лояльности
+            campaigns = {}
+            for pt in response["paymentTypes"]:
+                if "applicableMarketingCampaigns" in pt and pt["applicableMarketingCampaigns"]:
+                    for campaign in pt["applicableMarketingCampaigns"]:
+                        if campaign not in campaigns:
+                            campaigns[campaign] = []
+                        campaigns[campaign].append(pt["name"])
+            
+            if campaigns:
+                campaign_list = list(campaigns.keys())
+                for i, campaign in enumerate(campaign_list, 1):
+                    payment_names = ", ".join(campaigns[campaign])
+                    print(f"  {i}) ID: {campaign} (используется в: {payment_names})")
+                print("")
+                
+                campaign_choice = input("Введите ID программы лояльности (или Enter чтобы пропустить): ").strip()
+                if campaign_choice:
+                    if campaign_choice in campaigns:
+                        self.pay_program_id = campaign_choice
+                        self._print_status(f"PayProgramId установлен: {self.pay_program_id}", "success")
+                    else:
+                        self._print_status("ID не найден в списке! PayProgramId не установлен.", "error")
             else:
-                self._print_status("ID не введен! PaymentTypeId не установлен.", "error")
+                self._print_status("Программы лояльности не найдены", "warning")
+            
+            # Затем запрашиваем PaymentTypeId
+            print("\nВыберите тип оплаты (PaymentTypeId):")
+            print("Доступные типы оплаты:")
+            for i, pt in enumerate(response["paymentTypes"], 1):
+                print(f"  {i}) ID: {pt['id']} - {pt['name']} ({pt.get('paymentTypeKind', 'N/A')})")
+            print("")
+            
+            pt_choice = input("Введите номер типа оплаты (или Enter чтобы пропустить): ").strip()
+            if pt_choice.isdigit() and 1 <= int(pt_choice) <= len(response["paymentTypes"]):
+                selected_pt = response["paymentTypes"][int(pt_choice)-1]
+                self.payment_type_id = selected_pt["id"]
+                self.payment_type_name = selected_pt["name"]
+                self._print_status(f"PaymentTypeId установлен: {self.payment_type_id} - {self.payment_type_name}", "success")
+            else:
+                self._print_status("Неверный выбор! PaymentTypeId не установлен.", "error")
         else:
             self._print_status("Ошибка получения типов оплаты", "error")
     
@@ -328,7 +340,6 @@ class IikoAPIClient:
         response = self._make_request("POST", "/api/2/menu", {})
         
         if response:
-            # Пытаемся найти externalMenus в ответе
             if isinstance(response, dict):
                 if "externalMenus" in response and response["externalMenus"]:
                     # Выводим список меню
@@ -340,12 +351,12 @@ class IikoAPIClient:
                     # Предлагаем ввести ID напрямую
                     menu_id = input("Введите ID меню: ").strip()
                     if menu_id:
-                        # Проверяем, есть ли такой ID в списке
                         found = False
                         for menu in response["externalMenus"]:
                             if menu["id"] == menu_id:
                                 self.external_menu_id = menu_id
-                                self._print_status(f"External ID IikoWeb menu установлен: {self.external_menu_id}", "success")
+                                self.external_menu_name = menu["name"]
+                                self._print_status(f"External ID IikoWeb menu установлен: {self.external_menu_id} - {self.external_menu_name}", "success")
                                 found = True
                                 break
                         if not found:
@@ -353,9 +364,7 @@ class IikoAPIClient:
                     else:
                         self._print_status("ID не введен! External ID IikoWeb menu не установлен.", "error")
                 else:
-                    # Если структура другая, выводим весь ответ
                     print(json.dumps(response, indent=2, ensure_ascii=False))
-                    # Предлагаем ввести вручную
                     menu_id = input("\nВведите External ID IikoWeb menu вручную: ").strip()
                     if menu_id:
                         self.external_menu_id = menu_id
@@ -382,7 +391,7 @@ class IikoAPIClient:
                 self._print_status("ID меню не может быть пустым!", "error")
                 return
         else:
-            self._print_status(f"Текущий External ID IikoWeb menu: {self.external_menu_id}", "highlight")
+            self._print_status(f"Текущий External ID IikoWeb menu: {self.external_menu_id} - {self.external_menu_name}", "highlight")
             menu_id = input("Нажмите Enter чтобы использовать текущий, или введите новый ID: ").strip()
             if not menu_id:
                 menu_id = self.external_menu_id
@@ -441,20 +450,55 @@ class IikoAPIClient:
         if not self._get_org_id():
             return
         
-        # Здесь должен быть реальный запрос для получения Wallet ID
-        # Пока предлагаем ввести вручную
-        wallet_id = input("Введите Wallet ID: ").strip()
-        if wallet_id:
-            self.wallet_id = wallet_id
-            self._print_status(f"WalletId установлен: {self.wallet_id}", "success")
+        # Запрос для получения Wallet ID
+        data = {"organizationIds": [self.org_id]}
+        response = self._make_request("POST", "/api/1/wallets", data)
+        
+        if response:
+            # Выводим список кошельков
+            if isinstance(response, dict) and "wallets" in response:
+                wallets = response["wallets"]
+                if wallets:
+                    print("\nСписок доступных кошельков:")
+                    for wallet in wallets:
+                        print(f"  ID: {wallet.get('id')} - {wallet.get('name', 'Без названия')}")
+                    print("")
+                    
+                    wallet_id = input("Введите ID кошелька: ").strip()
+                    if wallet_id:
+                        found = False
+                        for wallet in wallets:
+                            if wallet.get("id") == wallet_id:
+                                self.wallet_id = wallet_id
+                                self._print_status(f"WalletId установлен: {self.wallet_id}", "success")
+                                found = True
+                                break
+                        if not found:
+                            self._print_status("ID не найден в списке! WalletId не установлен.", "error")
+                    else:
+                        self._print_status("ID не введен! WalletId не установлен.", "error")
+                else:
+                    self._print_status("Кошельки не найдены", "warning")
+            else:
+                # Если структура другая, выводим весь ответ
+                print(json.dumps(response, indent=2, ensure_ascii=False))
+                wallet_id = input("\nВведите Wallet ID вручную: ").strip()
+                if wallet_id:
+                    self.wallet_id = wallet_id
+                    self._print_status(f"WalletId установлен: {self.wallet_id}", "success")
+        else:
+            self._print_status("Ошибка получения кошельков", "error")
     
     def reset_org_id(self):
         """Сброс всех ID"""
         self.org_id = None
         self.terminal_group_id = None
+        self.terminal_group_name = None
         self.external_menu_id = None
+        self.external_menu_name = None
         self.pay_program_id = None
         self.payment_type_id = None
+        self.payment_type_name = None
         self.wallet_id = None
         self.token = None
         self.api_key = None
@@ -486,13 +530,19 @@ class IikoAPIClient:
         if not self.terminal_group_id:
             self._print_status("TerminalGroupID: не установлен", "error")
         else:
-            self._print_status(f"TerminalGroupID: {self.terminal_group_id}", "highlight")
+            display = f"{self.terminal_group_id}"
+            if self.terminal_group_name:
+                display += f" - {self.terminal_group_name}"
+            self._print_status(f"TerminalGroupID: {display}", "highlight")
         
         # External ID IikoWeb menu
         if not self.external_menu_id:
             self._print_status("External ID IikoWeb menu: не установлен", "error")
         else:
-            self._print_status(f"External ID IikoWeb menu: {self.external_menu_id}", "highlight")
+            display = f"{self.external_menu_id}"
+            if self.external_menu_name:
+                display += f" - {self.external_menu_name}"
+            self._print_status(f"External ID IikoWeb menu: {display}", "highlight")
         
         # PayProgramId
         if not self.pay_program_id:
@@ -504,7 +554,10 @@ class IikoAPIClient:
         if not self.payment_type_id:
             self._print_status("PaymentTypeId: не установлен", "error")
         else:
-            self._print_status(f"PaymentTypeId: {self.payment_type_id}", "highlight")
+            display = f"{self.payment_type_id}"
+            if self.payment_type_name:
+                display += f" - {self.payment_type_name}"
+            self._print_status(f"PaymentTypeId: {display}", "highlight")
         
         # WalletId
         if not self.wallet_id:
@@ -540,13 +593,19 @@ class IikoAPIClient:
         
         # Пункт 3 - TerminalGroupID
         if self.terminal_group_id:
-            print(f"3) Получить TerminalGroupID ({self._color_value(self.terminal_group_id)})")
+            display = self.terminal_group_id
+            if self.terminal_group_name:
+                display += f" - {self.terminal_group_name}"
+            print(f"3) Получить TerminalGroupID ({self._color_value(display)})")
         else:
             print(f"3) Получить TerminalGroupID ({self._color_value(None)})")
         
         # Пункт 4 - External ID IikoWeb menu
         if self.external_menu_id:
-            print(f"4) Получить External ID IikoWeb menu ({self._color_value(self.external_menu_id)})")
+            display = self.external_menu_id
+            if self.external_menu_name:
+                display += f" - {self.external_menu_name}"
+            print(f"4) Получить External ID IikoWeb menu ({self._color_value(display)})")
         else:
             print(f"4) Получить External ID IikoWeb menu ({self._color_value(None)})")
         
@@ -557,7 +616,10 @@ class IikoAPIClient:
         else:
             print(f"    (PayProgramId (applicableMarketingCampaigns): {self._color_value(None)})")
         if self.payment_type_id:
-            print(f"    (PaymentTypeId (id): {self._color_value(self.payment_type_id)})")
+            display = self.payment_type_id
+            if self.payment_type_name:
+                display += f" - {self.payment_type_name}"
+            print(f"    (PaymentTypeId (id): {self._color_value(display)})")
         else:
             print(f"    (PaymentTypeId (id): {self._color_value(None)})")
         
