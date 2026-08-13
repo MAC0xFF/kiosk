@@ -576,14 +576,7 @@ class KioskManager:
         print("Пример: showFoodValues=Never")
         print("=" * 60)
         
-        # Сначала показываем текущие параметры
-        print("\nТЕКУЩИЕ ПАРАМЕТРЫ:")
-        print("-" * 60)
-        self.run_ansible("-m shell -a \"cat /etc/sst-iiko/settings.ini 2>/dev/null | grep -v '^#' | grep -v '^$' || echo '[ERROR] Файл не найден'\" --become")
-        
-        print("\n" + "=" * 60)
-        
-        param_input = input("Введите параметр и значение (параметр=значение) или '0' для отмены: ")
+        param_input = input("\nВведите параметр и значение (параметр=значение) или '0' для отмены: ")
         if param_input == '0' or not param_input:
             print("[CANCEL] Отменено")
             return
@@ -610,37 +603,23 @@ class KioskManager:
             print("[CANCEL] Отменено")
             return
         
-        # Формируем команду для замены параметра
-        # Используем sed для замены строки
-        sed_cmd = f"sed -i 's/^{param}=.*/{param}={value}/' /etc/sst-iiko/settings.ini"
-        
-        # Проверяем, существует ли параметр
-        check_cmd = f"grep -q '^{param}=' /etc/sst-iiko/settings.ini"
-        
-        # Если параметра нет, добавляем его в конец файла
-        add_cmd = f"echo '{param}={value}' >> /etc/sst-iiko/settings.ini"
-        
-        # Комбинированная команда
-        full_cmd = f"""
+        # Формируем команду для замены параметра с правильным экранированием
+        # Используем одинарные кавычки для всей команды shell
+        cmd = f"""
 if grep -q '^{param}=' /etc/sst-iiko/settings.ini 2>/dev/null; then
-    echo "Параметр {param} найден, заменяем..."
+    echo "Param {param} found, replacing..."
     sed -i 's/^{param}=.*/{param}={value}/' /etc/sst-iiko/settings.ini
-    echo "[OK] Параметр {param} изменен на {value}"
+    echo "[OK] {param}={value}"
 else
-    echo "Параметр {param} не найден, добавляем..."
+    echo "Param {param} not found, adding..."
     echo '{param}={value}' >> /etc/sst-iiko/settings.ini
-    echo "[OK] Параметр {param} добавлен со значением {value}"
+    echo "[OK] {param}={value} (added)"
 fi
-cat /etc/sst-iiko/settings.ini | grep -E '^{param}='
 """
+        # Экранируем для передачи в shell
+        cmd_escaped = cmd.replace('"', '\\"').replace('$', '\\$')
         
-        self.run_ansible(f"-m shell -a \"{full_cmd}\" --become")
-        
-        # Предлагаем перезапустить SST
-        print("\n" + "=" * 60)
-        restart = input("Перезапустить SST для применения изменений? (y/N): ")
-        if restart.lower() == 'y':
-            self.restart_sst()
+        self.run_ansible(f"-m shell -a \"{cmd_escaped}\" --become")
     
     def restart_sst(self):
         """Перезапуск SST"""
